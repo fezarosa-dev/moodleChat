@@ -1,21 +1,75 @@
-# --- Python ---
+# =========================
+# Python
+# =========================
 __pycache__/
 *.py[cod]
 *$py.class
-.env
+
+# Distribuição
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# Ambientes virtuais
+.venv/
 venv/
 env/
 ENV/
 
-# --- Banco de Dados ---
-*.duckdb
-*.db
-# --- Node.js ---
-node_modules/
-dist/
-build/
-.env.local
+# Arquivos de ambiente
+.env
+.env.*
+!.env.example
 
-# --- Arquivos do Sistema ---
-.DS_Store
+# Banco de dados
+*.duckdb
+*.sqlite
+*.sqlite3
+*.db
+
+# Logs
+*.log
+
+# Coverage / testes
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.cache/
+
+# Type checkers
+.mypy_cache/
+.pyre/
+.pytype/
+
+# Linters
+.ruff_cache/
+.pylint.d/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDEs
 .vscode/
+.idea/
+
+# Sistema operacional
+.DS_Store
+Thumbs.db
+
+# Arquivos temporários
+*.tmp
+*.temp
+/tmp/
+temp/
+
+# Compilados
+*.so
+*.o
+*.a
+
+# Arquivos de backup
+*~
+*.bak

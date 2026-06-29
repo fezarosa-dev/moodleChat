@@ -1,0 +1,32 @@
+name: Lint
+
+on:
+    push:
+        branches:
+            - "**"
+    pull_request:
+
+jobs:
+    pylint:
+        runs-on: ubuntu-latest
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Configurar Python
+              uses: actions/setup-python@v5
+              with:
+                  python-version: "3.12"
+                  cache: "pip"
+
+            - name: Instalar dependências
+              working-directory: bot_moodle
+              run: |
+                  python -m pip install --upgrade pip
+                  pip install -e ".[dev]"
+
+            - name: Executar Pylint (quality gate >= 8)
+              working-directory: bot_moodle
+              run: |
+                  pylint bot_moodle --fail-under=8.0

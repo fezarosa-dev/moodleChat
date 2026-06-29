@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "Moodle Chat Bot",
+  "version": "1.3",
+  "description": "Bot modularizado com separação de conceitos e persistência DuckDB.",
+  "permissions": [
+    "http://localhost/*"
+  ],
+  "background": {
+    "scripts": ["background.js"]
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*/*"
+      ],
+      "js": [
+        "chatUsage.js",
+        "content.js"
+      ],
+      "run_at": "document_end"
+    }
+  ]
+}
