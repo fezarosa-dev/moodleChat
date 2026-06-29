@@ -1,0 +1,12 @@
+[MASTER]
+ignore=venv,.venv
+
+[MESSAGES CONTROL]
+disable=
+    too-many-locals,
+    too-many-branches,
+    too-many-statements,
+    too-many-return-statements
+
+[FORMAT]
+max-line-length=120
