@@ -169,3 +169,32 @@ def salvar_estado_pendente(
 def deletar_estado_pendente(cursor: duckdb.DuckDBPyConnection) -> None:
     """Remove o estado pendente da sessão."""
     cursor.execute("DELETE FROM estado_pendente WHERE id_sessao = 1")
+
+
+def limpar_historico_chat(cursor: duckdb.DuckDBPyConnection) -> int:
+    """
+    Remove todo o histórico de !chat/!fix (mensagens + respostas) do banco,
+    além de qualquer estado pendente de confirmação. Retorna a quantidade
+    de mensagens removidas.
+    """
+    qtd = cursor.execute(
+        "SELECT COUNT(*) FROM mensagens_usuario"
+        " WHERE texto LIKE '!chat%' OR texto LIKE '!fix%'"
+    ).fetchone()[0]
+
+    cursor.execute(
+        """
+        DELETE FROM respostas_ia
+        WHERE msg_usuario_id IN (
+            SELECT id FROM mensagens_usuario
+            WHERE texto LIKE '!chat%' OR texto LIKE '!fix%'
+        )
+        """
+    )
+    cursor.execute(
+        "DELETE FROM mensagens_usuario"
+        " WHERE texto LIKE '!chat%' OR texto LIKE '!fix%'"
+    )
+    cursor.execute("DELETE FROM estado_pendente WHERE id_sessao = 1")
+
+    return qtd

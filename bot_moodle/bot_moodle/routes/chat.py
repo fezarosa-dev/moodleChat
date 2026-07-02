@@ -112,7 +112,9 @@ def _ajuda() -> str:
         "   !run <código C>  -> Compila e executa.\n"
         "   !r <valor>       -> Envia input para o programa.\n"
         "   !kill            -> Encerra e entrega toda a saída acumulada.\n"
-        "   (Saída entregue após 5s de silêncio ou com !kill)"
+        "   (Saída entregue após 5s de silêncio ou com !kill)\n\n"
+        "5. MANUTENÇÃO:\n"
+        "   !chclear         -> Limpa o histórico de !chat/!fix salvo no banco."
     )
 
 
@@ -159,6 +161,15 @@ def _handle_kill(cursor):
     _salvar_run_atual(cursor)
     resultado = runner.matar_processo()
     return jsonify({"status": "new", "is_command": True, "resposta": resultado}), 200
+
+
+def _handle_chclear(cursor, pendente):
+    qtd = _db_module.limpar_historico_chat(cursor)
+    msg = f"🧹 Histórico de chat limpo. {qtd} mensagem(ns) removida(s) do banco."
+    return jsonify({
+        "status": "new", "is_command": True,
+        "resposta": _juntar(pendente, msg),
+    }), 200
 
 
 def _handle_confirmacao(cursor, msg_id, texto, pendente):
@@ -345,6 +356,8 @@ def check_and_save():
             return _handle_r(pendente, texto)
         if texto == "!kill":
             return _handle_kill(cursor)
+        if texto == "!chclear":
+            return _handle_chclear(cursor, pendente)
         if texto in ("!s", "!n"):
             return _handle_confirmacao(cursor, msg_id, texto, pendente)
 
