@@ -12,7 +12,7 @@ pelo chat, com suporte a IA (Gemini) para tirar dúvidas e corrigir código.
 
 ```bash
 # 1. Clone o repositório
-git clone https://github.com/seu-usuario/bot-moodle.git
+git clone https://github.com/fezarosa-dev/moodleChat.git
 cd bot-moodle
 
 # 2. Crie e ative a venv
