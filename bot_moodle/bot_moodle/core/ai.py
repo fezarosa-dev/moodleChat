@@ -1,6 +1,8 @@
 """Integração com o Gemini — geração de respostas e sanitização."""
 
 import re
+from typing import Any
+
 from google import genai
 
 
@@ -33,8 +35,11 @@ def pedir_ao_gemini(
         Resposta da IA sanitizada, ou mensagem de cota esgotada.
     """
     modelos_fallback = [
-        "gemini-3.5-flash", "gemini-3-flash", "gemini-2.5-flash",
-        "gemini-3.1-flash-lite", "gemini-2.5-flash-lite",
+        "gemini-3.5-flash",
+        "gemini-3-flash",
+        "gemini-2.5-flash",
+        "gemini-3.1-flash-lite",
+        "gemini-2.5-flash-lite",
     ]
 
     if modo_fix:
@@ -71,9 +76,7 @@ def pedir_ao_gemini(
     for modelo in modelos_fallback:
         try:
             print(f"[IA] Tentando modelo: {modelo}...")
-            response = cliente.models.generate_content(
-                model=modelo, contents=prompt
-            )
+            response = cliente.models.generate_content(model=modelo, contents=prompt)
             print(f"[IA] ✨ Sucesso com: {modelo}")
             return sanitizar_resposta(response.text)
         except Exception as exc:  # pylint: disable=broad-exception-caught

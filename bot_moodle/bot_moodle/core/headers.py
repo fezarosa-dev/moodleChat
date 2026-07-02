@@ -101,9 +101,7 @@ def corrigir_includes(codigo: str) -> tuple[str, list[str]]:
         return codigo, avisos
 
     necessarios = [
-        h
-        for p, h in _HEADERS_INFERIDOS
-        if h not in presentes and re.search(p, codigo)
+        h for p, h in _HEADERS_INFERIDOS if h not in presentes and re.search(p, codigo)
     ]
     if not necessarios:
         necessarios = ["stdio.h"]

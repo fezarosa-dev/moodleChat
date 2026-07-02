@@ -1,8 +1,8 @@
 // chatUsage.js - Processamento de Dados e Regras de Negócio
 const ChatUsage = {
-    BACKEND_URL: 'http://localhost:5000/check_and_save',
+    BACKEND_URL: "http://localhost:5000/check_and_save",
 
-    NOME_AUTORIZADO: 'FELIPE ZANONI DA ROSA',
+    NOME_AUTORIZADO: "FELIPE ZANONI DA ROSA",
 
     /**
      * Retorna o nome do usuário logado no Moodle (em maiúsculas, sem espaços extras).
@@ -13,16 +13,23 @@ const ChatUsage = {
         const tentativas = [
             // 1. Strong com classes específicas dentro do drawer de mensagens
             //    (estrutura semântica do tema Moodle — muito estável)
-            () => document.querySelector('.message-app strong.m-0.text-truncate'),
+            () =>
+                document.querySelector(".message-app strong.m-0.text-truncate"),
 
             // 2. Strong dentro do header-container do message-drawer
-            () => document.querySelector('[id^="message-drawer"] strong.m-0.text-truncate'),
+            () =>
+                document.querySelector(
+                    '[id^="message-drawer"] strong.m-0.text-truncate',
+                ),
 
             // 3. Qualquer strong.m-0.text-truncate dentro de .header-container
-            () => document.querySelector('.header-container strong.m-0.text-truncate'),
+            () =>
+                document.querySelector(
+                    ".header-container strong.m-0.text-truncate",
+                ),
 
             // 4. Fallback genérico: primeiro strong com essas classes na página
-            () => document.querySelector('strong.m-0.text-truncate'),
+            () => document.querySelector("strong.m-0.text-truncate"),
         ];
 
         for (const tentar of tentativas) {
@@ -32,7 +39,9 @@ const ChatUsage = {
                     const nome = el.textContent.trim().toUpperCase();
                     if (nome.length > 2) return nome; // descarta resultados vazios/ruins
                 }
-            } catch (_) { /* seletor inválido no contexto atual, tenta o próximo */ }
+            } catch (_) {
+                /* seletor inválido no contexto atual, tenta o próximo */
+            }
         }
 
         return null;
@@ -55,19 +64,19 @@ const ChatUsage = {
 
         // ── Guarda 2: apenas comandos (mensagens que começam com '!') ─────────
         const textoTrimado = texto.trim();
-        if (!textoTrimado.startsWith('!')) return null;
+        if (!textoTrimado.startsWith("!")) return null;
 
         // ── Envia para o backend ───────────────────────────────────────────────
         try {
             const respostaDb = await fetch(this.BACKEND_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id: id, texto: textoTrimado })
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id: id, texto: textoTrimado }),
             });
 
             const resultadoDb = await respostaDb.json();
 
-            if (resultadoDb.status !== 'new') return null;
+            if (resultadoDb.status !== "new") return null;
 
             if (resultadoDb.is_command && resultadoDb.resposta) {
                 return resultadoDb.resposta;
@@ -75,10 +84,13 @@ const ChatUsage = {
 
             return null;
         } catch (erro) {
-            console.error("[ChatUsage] Erro ao processar mensagem no cérebro:", erro);
+            console.error(
+                "[ChatUsage] Erro ao processar mensagem no cérebro:",
+                erro,
+            );
             return null;
         }
-    }
+    },
 };
 
 // Vincula o objeto ao escopo global (window)

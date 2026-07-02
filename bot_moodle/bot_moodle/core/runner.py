@@ -1,9 +1,9 @@
 """Compilação e execução interativa de código C com timer de silêncio."""
 
+import queue
 import re
 import subprocess
 import threading
-import queue
 import time
 
 from bot_moodle.core.headers import corrigir_includes
@@ -14,33 +14,34 @@ from bot_moodle.core.headers import corrigir_includes
 
 SILENCE_TIMEOUT = 5.0  # segundos sem output → empacota resultado
 _ARQUIVO_C = "/tmp/temp_codigo.c"
-_BINARIO   = "/tmp/temp_executavel"
+_BINARIO = "/tmp/temp_executavel"
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  ESTADO GLOBAL DA SESSÃO
 # ─────────────────────────────────────────────────────────────────────────────
 
 _estado: dict = {
-    "proc":               None,
-    "stdout_queue":       queue.Queue(),
-    "stderr_queue":       queue.Queue(),
-    "saida_lock":         threading.Lock(),
-    "saida_buffer":       [],
+    "proc": None,
+    "stdout_queue": queue.Queue(),
+    "stderr_queue": queue.Queue(),
+    "saida_lock": threading.Lock(),
+    "saida_buffer": [],
     "resultado_pendente": None,
-    "monitor_thread":     None,
-    "ultimo_print":       0.0,   # 0.0 = nenhum output ainda; >0 = timestamp
-    "ativo":              False,
-    "encerrou":           False,
+    "monitor_thread": None,
+    "ultimo_print": 0.0,  # 0.0 = nenhum output ainda; >0 = timestamp
+    "ativo": False,
+    "encerrou": False,
     # rastreamento do run atual
-    "run_id":             None,
-    "run_codigo":         None,
-    "run_inputs":         [],
-    "run_saida":          None,
+    "run_id": None,
+    "run_codigo": None,
+    "run_inputs": [],
+    "run_saida": None,
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  LEITURA ASSÍNCRONA
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def _ler_stream(stream, q: queue.Queue) -> None:
     """Lê um stream linha a linha e coloca na fila."""
@@ -92,6 +93,7 @@ def _drenar_filas(timeout: float = 0.05) -> tuple[str, str]:
 #  MONITOR DE SILÊNCIO
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def _empacotar_resultado(saida_completa: str, encerrou: bool, rc: int) -> str:
     """Monta a string de resultado final a ser entregue ao usuário."""
     if encerrou:
@@ -134,9 +136,7 @@ def _monitor() -> None:
 
         encerrou = proc.poll() is not None
         ultimo = _estado["ultimo_print"]
-        timeout_atingido = (
-            ultimo > 0.0 and (time.time() - ultimo) >= SILENCE_TIMEOUT
-        )
+        timeout_atingido = ultimo > 0.0 and (time.time() - ultimo) >= SILENCE_TIMEOUT
 
         if not (encerrou or timeout_atingido):
             continue
@@ -160,9 +160,9 @@ def _monitor() -> None:
             _estado["ultimo_print"] = 0.0
 
         if encerrou:
-            _estado["ativo"]     = False
-            _estado["encerrou"]  = True
-            _estado["proc"]      = None
+            _estado["ativo"] = False
+            _estado["encerrou"] = True
+            _estado["proc"] = None
             _estado["run_saida"] = saida_completa
             break
 
@@ -173,6 +173,7 @@ def _monitor() -> None:
 #  LIMPEZA DE ESTADO
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def _limpar_estado() -> None:
     """Mata o processo ativo e reseta o estado de execução."""
     proc = _estado["proc"]
@@ -181,15 +182,15 @@ def _limpar_estado() -> None:
             proc.kill()
         except OSError:
             pass
-    _estado["proc"]               = None
-    _estado["stdout_queue"]       = queue.Queue()
-    _estado["stderr_queue"]       = queue.Queue()
-    _estado["saida_buffer"]       = []
+    _estado["proc"] = None
+    _estado["stdout_queue"] = queue.Queue()
+    _estado["stderr_queue"] = queue.Queue()
+    _estado["saida_buffer"] = []
     _estado["resultado_pendente"] = None
-    _estado["monitor_thread"]     = None
-    _estado["ultimo_print"]       = 0.0
-    _estado["ativo"]              = False
-    _estado["encerrou"]           = False
+    _estado["monitor_thread"] = None
+    _estado["ultimo_print"] = 0.0
+    _estado["ativo"] = False
+    _estado["encerrou"] = False
     # run_id/run_codigo/run_inputs/run_saida permanecem até o próximo
     # compilar_e_executar, para permitir !chat+id após o encerramento.
 
@@ -197,6 +198,7 @@ def _limpar_estado() -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 #  API PÚBLICA
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def verificar_resultado_pendente() -> "str | None":
     """Retorna e limpa o resultado pendente (chamado pelo server antes de cada request)."""
@@ -214,10 +216,10 @@ def obter_dados_run() -> "dict | None":
     if _estado["run_id"] is None:
         return None
     return {
-        "id":     _estado["run_id"],
+        "id": _estado["run_id"],
         "codigo": _estado["run_codigo"],
         "inputs": list(_estado["run_inputs"]),
-        "saida":  _estado["run_saida"],
+        "saida": _estado["run_saida"],
     }
 
 
@@ -265,17 +267,17 @@ def compilar_e_executar(codigo_c: str, run_id: "str | None" = None) -> str:
         text=True,
         bufsize=0,
     ) as proc:
-        _estado["proc"]          = proc
-        _estado["stdout_queue"]  = queue.Queue()
-        _estado["stderr_queue"]  = queue.Queue()
-        _estado["saida_buffer"]  = []
-        _estado["ultimo_print"]  = 0.0
-        _estado["ativo"]         = True
-        _estado["encerrou"]      = False
-        _estado["run_id"]        = run_id
-        _estado["run_codigo"]    = codigo_limpo
-        _estado["run_inputs"]    = []
-        _estado["run_saida"]     = None
+        _estado["proc"] = proc
+        _estado["stdout_queue"] = queue.Queue()
+        _estado["stderr_queue"] = queue.Queue()
+        _estado["saida_buffer"] = []
+        _estado["ultimo_print"] = 0.0
+        _estado["ativo"] = True
+        _estado["encerrou"] = False
+        _estado["run_id"] = run_id
+        _estado["run_codigo"] = codigo_limpo
+        _estado["run_inputs"] = []
+        _estado["run_saida"] = None
 
         _ler_saida_async(proc)
         t = threading.Thread(target=_monitor, daemon=True)
@@ -289,8 +291,7 @@ def compilar_e_executar(codigo_c: str, run_id: "str | None" = None) -> str:
             prefixo += f"⚠️ Avisos de Compilação:\n{avisos_gcc}\n\n"
 
         return (
-            prefixo
-            + "⏳ Programa em execução e aguardando entrada.\n"
+            prefixo + "⏳ Programa em execução e aguardando entrada.\n"
             "Use !r <valor> para enviar input. "
             "A saída será entregue após 5s de silêncio ou quando você usar !kill."
         )
@@ -323,9 +324,7 @@ def matar_processo() -> str:
     """Mata o processo ativo e entrega todo o output acumulado imediatamente."""
     proc = _estado.get("proc")
 
-    if _estado.get("encerrou") or (
-        proc is None and _estado.get("resultado_pendente")
-    ):
+    if _estado.get("encerrou") or (proc is None and _estado.get("resultado_pendente")):
         pendente = verificar_resultado_pendente()
         _limpar_estado()
         if pendente:

@@ -1,9 +1,10 @@
 """Entry point da aplicação Flask."""
 
 import os
+
+from dotenv import load_dotenv
 from flask import Flask
 from flask_cors import CORS
-from dotenv import load_dotenv
 
 from bot_moodle.core.ai import criar_cliente
 from bot_moodle.db import conectar
@@ -24,7 +25,7 @@ def create_app() -> Flask:
     if not api_key:
         print("\n❌ [ERRO CRÍTICO]: Chave 'API_KEY' não encontrada no .env!\n")
 
-    db_conn   = conectar(os.getenv("DB_FILE", "moodle_history.duckdb"))
+    db_conn = conectar(os.getenv("DB_FILE", "moodle_history.duckdb"))
     ai_client = criar_cliente(api_key or "")
 
     init_handlers(db_conn, ai_client)
