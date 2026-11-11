@@ -25,6 +25,7 @@ ENV/
 
 # Banco de dados
 *.duckdb
+*.duckdb.wal
 *.sqlite
 *.sqlite3
 *.db
@@ -73,3 +74,5 @@ temp/
 # Arquivos de backup
 *~
 *.bak
+
+.serena/

@@ -20,19 +20,18 @@ CREATE TABLE IF NOT EXISTS respostas_ia (
     FOREIGN KEY (msg_usuario_id) REFERENCES mensagens_usuario(id)
 );
 
-CREATE TABLE IF NOT EXISTS estado_pendente (
-    id_sessao           INTEGER PRIMARY KEY DEFAULT 1,
-    msg_id              VARCHAR,
-    texto_original      TEXT,
-    contexto_acumulado  TEXT
-);
-
 CREATE TABLE IF NOT EXISTS runs (
     id        VARCHAR PRIMARY KEY,
     codigo    TEXT,
     inputs    TEXT,
     saida     TEXT,
     data_run  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS buffer_chat (
+    msg_id      VARCHAR PRIMARY KEY,
+    texto       TEXT,
+    data_envio  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 """
 
@@ -69,56 +68,44 @@ def salvar_run(
     )
 
 
-def buscar_run(cursor: duckdb.DuckDBPyConnection, run_id: str) -> "dict | None":
-    """Busca um run pelo ID; retorna dict ou None."""
-    row = cursor.execute(
-        "SELECT codigo, inputs, saida FROM runs WHERE id = ?", (run_id,)
-    ).fetchone()
-    if not row:
-        return None
-    codigo, inputs_json, saida = row
-    try:
-        inputs = json.loads(inputs_json) if inputs_json else []
-    except ValueError:
-        inputs = []
-    return {"codigo": codigo, "inputs": inputs, "saida": saida}
-
-
 # ─────────────────────────────────────────────────────────────────────────────
 #  HISTÓRICO DE CHAT
 # ─────────────────────────────────────────────────────────────────────────────
 
-def buscar_historico(
+def buscar_conversa(
     cursor: duckdb.DuckDBPyConnection, limite: int
 ) -> list[tuple]:
-    """Retorna as últimas `limite` interações com resposta bem-sucedida."""
-    return cursor.execute(
+    """
+    Últimos `limite` itens da conversa (desde o último !chclear), do mais antigo
+    ao mais novo. Cada item: ("chat", pergunta, resposta, None)
+    ou ("run", codigo, inputs_list, saida).
+    """
+    rows = cursor.execute(
         """
-        SELECT u.id, u.texto, r.texto_resposta
-        FROM mensagens_usuario u
-        JOIN respostas_ia r ON u.id = r.msg_usuario_id
-        WHERE (u.texto LIKE '!chat%' OR u.texto LIKE '!fix%')
-          AND r.status = 'sucesso'
-        ORDER BY u.data_envio DESC
+        SELECT * FROM (
+            SELECT u.data_envio AS t, 'chat' AS tipo,
+                   u.texto AS a, r.texto_resposta AS b, NULL AS c
+            FROM mensagens_usuario u
+            JOIN respostas_ia r ON u.id = r.msg_usuario_id
+            WHERE (u.texto LIKE '!chat%' OR u.texto LIKE '!fix%')
+              AND r.status = 'sucesso'
+            UNION ALL
+            SELECT data_run, 'run', codigo, inputs, saida FROM runs
+        )
+        ORDER BY t DESC
         LIMIT ?
         """,
         (limite,),
     ).fetchall()
-
-
-def buscar_mensagem(
-    cursor: duckdb.DuckDBPyConnection, msg_id: str
-) -> "tuple | None":
-    """Retorna (texto_usuario, texto_ia, status_ia) ou None."""
-    return cursor.execute(
-        """
-        SELECT u.texto, r.texto_resposta, r.status
-        FROM mensagens_usuario u
-        LEFT JOIN respostas_ia r ON u.id = r.msg_usuario_id
-        WHERE u.id = ?
-        """,
-        (msg_id,),
-    ).fetchone()
+    itens = []
+    for _, tipo, a, b, c in reversed(rows):
+        if tipo == "run":
+            try:
+                b = json.loads(b) if b else []
+            except ValueError:
+                b = []
+        itens.append((tipo, a, b, c))
+    return itens
 
 
 def salvar_resposta_ia(
@@ -135,37 +122,59 @@ def salvar_resposta_ia(
     )
 
 
-def buscar_estado_pendente(
-    cursor: duckdb.DuckDBPyConnection,
-) -> "tuple | None":
-    """Retorna (msg_id, texto_original, contexto_acumulado) ou None."""
-    return cursor.execute(
-        "SELECT msg_id, texto_original, contexto_acumulado"
-        " FROM estado_pendente WHERE id_sessao = 1"
-    ).fetchone()
+def limpar_historico_chat(cursor: duckdb.DuckDBPyConnection) -> int:
+    """
+    Zera a conversa: histórico de !chat/!fix (respostas + texto das mensagens;
+    os ids ficam para o dedup), runs salvos e o buffer de !chata.
+    Retorna a quantidade de mensagens removidas.
+    """
+    qtd = cursor.execute(
+        "SELECT COUNT(*) FROM mensagens_usuario"
+        " WHERE texto LIKE '!chat%' OR texto LIKE '!fix%'"
+    ).fetchone()[0]
 
-
-def salvar_estado_pendente(
-    cursor: duckdb.DuckDBPyConnection,
-    msg_id: str,
-    texto_original: str,
-    contexto: str,
-) -> None:
-    """Upsert do estado pendente (só há 1 por sessão)."""
     cursor.execute(
         """
-        INSERT INTO estado_pendente
-            (id_sessao, msg_id, texto_original, contexto_acumulado)
-        VALUES (1, ?, ?, ?)
-        ON CONFLICT (id_sessao) DO UPDATE
-        SET msg_id=excluded.msg_id,
-            texto_original=excluded.texto_original,
-            contexto_acumulado=excluded.contexto_acumulado
-        """,
-        (msg_id, texto_original, contexto),
+        DELETE FROM respostas_ia
+        WHERE msg_usuario_id IN (
+            SELECT id FROM mensagens_usuario
+            WHERE texto LIKE '!chat%' OR texto LIKE '!fix%'
+        )
+        """
     )
+    # Mantém a linha (o id é o registro de dedup); só apaga o conteúdo.
+    # Deletar faria as mensagens antigas ainda visíveis no Moodle serem reprocessadas no reload.
+    cursor.execute(
+        "UPDATE mensagens_usuario SET texto = NULL"
+        " WHERE texto LIKE '!chat%' OR texto LIKE '!fix%'"
+    )
+    cursor.execute("DELETE FROM runs")
+    cursor.execute("DELETE FROM buffer_chat")
+
+    return qtd
 
 
-def deletar_estado_pendente(cursor: duckdb.DuckDBPyConnection) -> None:
-    """Remove o estado pendente da sessão."""
-    cursor.execute("DELETE FROM estado_pendente WHERE id_sessao = 1")
+# ─────────────────────────────────────────────────────────────────────────────
+#  BUFFER DE MENSAGENS QUEBRADAS (!chata / !chatsend)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def adicionar_buffer(
+    cursor: duckdb.DuckDBPyConnection, msg_id: str, texto: str
+) -> int:
+    """Guarda uma parte no buffer; retorna o total de partes guardadas."""
+    cursor.execute(
+        "INSERT INTO buffer_chat (msg_id, texto) VALUES (?, ?)", (msg_id, texto)
+    )
+    return cursor.execute("SELECT COUNT(*) FROM buffer_chat").fetchone()[0]
+
+
+def consumir_buffer(cursor: duckdb.DuckDBPyConnection) -> list[str]:
+    """Retorna as partes em ordem de envio e esvazia o buffer."""
+    partes = [
+        r[0]
+        for r in cursor.execute(
+            "SELECT texto FROM buffer_chat ORDER BY data_envio, msg_id"
+        ).fetchall()
+    ]
+    cursor.execute("DELETE FROM buffer_chat")
+    return partes

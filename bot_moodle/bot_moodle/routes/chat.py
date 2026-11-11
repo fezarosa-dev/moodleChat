@@ -4,10 +4,13 @@ import re
 from flask import Blueprint, request, jsonify
 
 from bot_moodle.core import runner
-from bot_moodle.core.ai import pedir_ao_gemini
+from bot_moodle.core.ai import pedir_a_ia
 from bot_moodle import db as _db_module
 
 bp = Blueprint("chat", __name__)
+
+# Quantos itens (pergunta+resposta ou run) da conversa vão como contexto para a IA
+LIMITE_CONTEXTO = 20
 
 # Injetados em bot_moodle/app.py após criar o app
 _db_conn   = None
@@ -37,8 +40,8 @@ def _juntar(pendente: "str | None", msg: str) -> str:
     return msg
 
 
-def _gemini(pergunta: str, contexto: str = "", fix: bool = False) -> str:
-    return pedir_ao_gemini(_ai_client, pergunta, contexto, fix)
+def _ia(pergunta: str, contexto: str = "", fix: bool = False) -> str:
+    return pedir_a_ia(_ai_client, pergunta, contexto, fix)
 
 
 def _salvar_run_atual(cursor) -> None:
@@ -54,38 +57,35 @@ def _salvar_run_atual(cursor) -> None:
         )
 
 
-def _contexto_run(cursor, run_id: str) -> "str | None":
-    """Busca run e monta bloco de contexto para a IA. None se não encontrado."""
-    row = _db_module.buscar_run(cursor, run_id)
-    if not row:
-        return None
-    inputs_fmt = (
-        "\n".join(f"  {v}" for v in row["inputs"])
-        if row["inputs"]
-        else "  (nenhum)"
-    )
-    return (
-        f"[Run ID {run_id}]\n"
-        f"Código:\n{row['codigo']}\n\n"
-        f"Entradas fornecidas:\n{inputs_fmt}\n\n"
-        f"Saída do programa:\n{row['saida'] or '(sem saída registrada)'}\n"
-    )
+def _contexto_conversa(cursor) -> str:
+    """Monta a conversa desde o último !chclear (perguntas, respostas e runs)."""
+    blocos = []
+    for tipo, a, b, c in _db_module.buscar_conversa(cursor, LIMITE_CONTEXTO):
+        if tipo == "chat":
+            blocos.append(f"[Aluno]: {a}\n[IA]: {b}")
+        else:
+            entradas = "\n".join(f"  {v}" for v in b) or "  (nenhuma)"
+            blocos.append(
+                f"[Aluno executou !run]\nCódigo:\n{a}\n\n"
+                f"Entradas:\n{entradas}\n\nSaída:\n{c or '(sem saída registrada)'}"
+            )
+    return "\n\n".join(blocos)
 
 
-def _resolver_run_id(cursor, texto: str) -> "tuple[str, str | None]":
-    """
-    Detecta +<id> no texto.
-    Retorna (texto_sem_plus_id, contexto_ou_aviso_de_erro).
-    """
-    m = re.search(r"\+(\S+)", texto)
-    if not m:
-        return texto, None
-    run_id    = m.group(1)
-    texto_sem = (texto[: m.start()] + texto[m.end():]).strip()
-    ctx = _contexto_run(cursor, run_id)
-    if ctx is None:
-        return texto_sem, f"⚠️ Run ID '{run_id}' não encontrado no banco."
-    return texto_sem, ctx
+def _responder(cursor, msg_id, pergunta, pendente, fix=False):
+    """Chama a IA com a conversa como contexto e grava a resposta no histórico."""
+    if not pergunta:
+        return jsonify({
+            "status": "new", "is_command": True,
+            "resposta": _juntar(pendente, "Digite sua dúvida ou código após o comando."),
+        }), 200
+    _salvar_run_atual(cursor)  # run encerrado sozinho ainda não foi persistido
+    resposta = _ia(pergunta, contexto=_contexto_conversa(cursor), fix=fix)
+    _db_module.salvar_resposta_ia(cursor, f"r_{msg_id}", msg_id, resposta)
+    return jsonify({
+        "status": "new", "is_command": True,
+        "resposta": _juntar(pendente, resposta),
+    }), 200
 
 
 # ─────────────────────────────────────────────
@@ -94,25 +94,23 @@ def _resolver_run_id(cursor, texto: str) -> "tuple[str, str | None]":
 
 def _ajuda() -> str:
     return (
-        "📋 GUIA DE COMANDOS DO BOT ACADÊMICO:\n\n"
-        "1. COMANDOS DE IA:\n"
-        "   !chat <pergunta>        -> Pergunta normal para a IA.\n"
-        "   !fix <código>           -> Correção direta de bugs.\n"
-        "   !chat+<id> <pergunta>   -> Inclui o run de <id> como contexto.\n"
-        "   !fix+<id> <código>      -> Fix com contexto do run de <id>.\n"
-        "   !help                   -> Exibe este menu.\n\n"
-        "2. CONTEXTO POR QUANTIDADE:\n"
-        "   !chatN <pergunta>       -> Puxa as últimas N interações.\n"
-        "   Exemplo: !chat3 por que o ponteiro falhou?\n\n"
-        "3. CONTEXTO CIRÚRGICO POR ID:\n"
-        "   !chatid<regras> <pergunta>\n"
-        "   IDt -> pergunta E resposta  |  IDm -> só pergunta  |  IDr -> só resposta\n"
-        "   Exemplo: !chatid8t,9m,10r qual a relação entre eles?\n\n"
-        "4. EXECUÇÃO DE CÓDIGO C:\n"
-        "   !run <código C>  -> Compila e executa.\n"
-        "   !r <valor>       -> Envia input para o programa.\n"
-        "   !kill            -> Encerra e entrega toda a saída acumulada.\n"
-        "   (Saída entregue após 5s de silêncio ou com !kill)"
+        "📋 GUIA DE COMANDOS DO BOT ACADÊMICO\n\n"
+        "1. IA (conversa contínua, como um chat normal):\n"
+        "   !chat <pergunta>   -> Pergunta para a IA.\n"
+        "   !fix <código>      -> Pede a correção de um bug.\n"
+        f"   A IA lembra das últimas {LIMITE_CONTEXTO} interações (perguntas e !run)\n"
+        "   até você usar !chclear. Código C da resposta é testado antes de chegar.\n\n"
+        "2. MENSAGEM GRANDE (maior que o limite do chat):\n"
+        "   !chata <parte>     -> Guarda uma parte sem chamar a IA.\n"
+        "   !chatsend [texto]  -> Junta as partes e envia como uma pergunta só.\n\n"
+        "3. EXECUÇÃO DE CÓDIGO C:\n"
+        "   !run <código C>    -> Compila e executa.\n"
+        "   !r <valor>         -> Envia uma entrada para o programa.\n"
+        "   !kill              -> Encerra e entrega toda a saída acumulada.\n"
+        f"   A saída chega após {runner.SILENCE_TIMEOUT:g}s sem novo output ou com !kill.\n\n"
+        "4. OUTROS:\n"
+        "   !chclear           -> Limpa a conversa (perguntas, respostas e runs).\n"
+        "   !help              -> Mostra este menu."
     )
 
 
@@ -161,156 +159,53 @@ def _handle_kill(cursor):
     return jsonify({"status": "new", "is_command": True, "resposta": resultado}), 200
 
 
-def _handle_confirmacao(cursor, msg_id, texto, pendente):
-    estado = _db_module.buscar_estado_pendente(cursor)
-    if not estado:
-        return jsonify({
-            "status": "new", "is_command": True,
-            "resposta": _juntar(
-                pendente, "Não há nenhuma ação aguardando confirmação no momento."
-            ),
-        }), 200
-
-    orig_msg_id, texto_original, contexto_acumulado = estado
-    _db_module.deletar_estado_pendente(cursor)
-
-    if texto == "!n":
-        return jsonify({
-            "status": "new", "is_command": True,
-            "resposta": _juntar(pendente, "Operação cancelada."),
-        }), 200
-
-    modo_fix = texto_original.startswith("!fix")
-    pergunta = re.sub(r"^!(chat\d*|chatid[^\s]*|fix)", "", texto_original).strip()
-    resposta = _gemini(pergunta, contexto=contexto_acumulado, fix=modo_fix)
-    _db_module.salvar_resposta_ia(cursor, f"r_{orig_msg_id}", orig_msg_id, resposta)
+def _handle_chclear(cursor, pendente):
+    qtd = _db_module.limpar_historico_chat(cursor)
+    runner.esquecer_run()
+    msg = f"🧹 Conversa limpa. {qtd} mensagem(ns) removida(s) do banco."
     return jsonify({
         "status": "new", "is_command": True,
-        "resposta": _juntar(pendente, f"{resposta}\n\nID: {orig_msg_id}"),
+        "resposta": _juntar(pendente, msg),
     }), 200
 
 
-def _handle_ia(cursor, msg_id, texto, pendente):  # noqa: C901
-    """Processa !chat / !chatN / !chatid / !fix com suporte a +id."""
-    is_chat_num    = re.match(r"^!chat(\d+)", texto)
-    is_chat_id     = texto.startswith("!chatid")
-    is_fix         = texto.startswith("!fix")
-    is_chat_normal = (
-        texto.startswith("!chat") and not is_chat_num and not is_chat_id
-    )
-
-    if not (is_chat_normal or is_fix or is_chat_num or is_chat_id):
-        return None
-
-    contexto = ""
-    pergunta = ""
-
-    # ── !chatN ───────────────────────────────────────────────────────────────
-    if is_chat_num:
-        limite = int(is_chat_num.group(1))
-        resto  = texto.replace(is_chat_num.group(0), "").strip()
-        resto, ctx_run = _resolver_run_id(cursor, resto)
-        pergunta = resto
-
-        historico = _db_module.buscar_historico(cursor, limite)
-        qtd = len(historico)
-        for h_id, h_user, h_ia in reversed(historico):
-            contexto += f"[Usuário ID {h_id}]: {h_user}\n[IA]: {h_ia}\n\n"
-        if ctx_run:
-            contexto += ctx_run + "\n"
-
-        if qtd < limite:
-            _db_module.salvar_estado_pendente(cursor, msg_id, texto, contexto)
-            aviso = (
-                f"⚠️ Só foi possível localizar {qtd} interação(ões) com resposta "
-                f"válida (você pediu {limite}). Deseja prosseguir mesmo assim?\n"
-                "Responda !s para SIM ou !n para NÃO."
-            )
-            return jsonify({
-                "status": "new", "is_command": True,
-                "resposta": _juntar(pendente, aviso),
-            }), 200
-
-    # ── !chatid ───────────────────────────────────────────────────────────────
-    elif is_chat_id:
-        match_regra = re.match(r"^!chatid([^\s]+)", texto)
-        regras_str  = match_regra.group(1)
-        resto       = texto.replace(match_regra.group(0), "").strip()
-        resto, ctx_run = _resolver_run_id(cursor, resto)
-        pergunta = resto
-
-        falhas: list[str] = []
-        ctx_temp = ""
-
-        for regra in regras_str.split(","):
-            regra = regra.strip()
-            if not regra:
-                continue
-            m = re.match(r"^(.+?)([tmr])$", regra)
-            if not m:
-                falhas.append(f"'{regra}' (formato inválido, use IDt / IDm / IDr)")
-                continue
-            target_id, tipo = m.group(1), m.group(2)
-            dados = _db_module.buscar_mensagem(cursor, target_id)
-            if not dados:
-                falhas.append(f"ID {target_id} (não encontrado no banco)")
-                continue
-            u_txt, r_txt, r_status = dados
-            if tipo in ("t", "r"):
-                if not r_txt or not r_txt.strip():
-                    falhas.append(f"ID {target_id} (resposta da IA está vazia)")
-                    continue
-                if r_status and r_status != "sucesso":
-                    falhas.append(
-                        f"ID {target_id} (resposta marcada como '{r_status}')"
-                    )
-                    continue
-            if tipo == "t":
-                ctx_temp += (
-                    f"[Histórico ID {target_id} - Msg]: {u_txt}\n"
-                    f"[Histórico ID {target_id} - Resp]: {r_txt}\n\n"
-                )
-            elif tipo == "m":
-                ctx_temp += f"[Histórico ID {target_id} - Msg]: {u_txt}\n\n"
-            elif tipo == "r":
-                ctx_temp += f"[Histórico ID {target_id} - Resp]: {r_txt}\n\n"
-
-        if falhas:
-            msg_err = (
-                "⚠️ Erro de Integridade — os seguintes IDs não puderam ser incluídos:\n"
-                + "\n".join(f"  • {f}" for f in falhas)
-                + "\n\nA operação foi abortada. Corrija as regras e tente novamente."
-            )
-            return jsonify({
-                "status": "new", "is_command": True,
-                "resposta": _juntar(pendente, msg_err),
-            }), 200
-
-        contexto = ctx_temp + (ctx_run + "\n" if ctx_run else "")
-
-    # ── !chat simples ou !fix ─────────────────────────────────────────────────
+def _handle_chata(cursor, msg_id, texto, pendente):
+    parte = texto[len("!chata"):].strip()
+    if not parte:
+        msg = "❌ Envie o texto após !chata. Exemplo: !chata primeira parte..."
     else:
-        cmd  = "!fix" if is_fix else "!chat"
-        resto = texto.replace(cmd, "", 1).strip()
-        resto, ctx_run = _resolver_run_id(cursor, resto)
-        pergunta = resto
-        if ctx_run:
-            contexto = ctx_run + "\n"
-
-    if not pergunta:
-        return jsonify({
-            "status": "new", "is_command": True,
-            "resposta": _juntar(
-                pendente, "Digite sua dúvida ou código após o comando."
-            ),
-        }), 200
-
-    resposta = _gemini(pergunta, contexto=contexto, fix=bool(is_fix))
-    _db_module.salvar_resposta_ia(cursor, f"r_{msg_id}", msg_id, resposta)
+        qtd = _db_module.adicionar_buffer(cursor, msg_id, parte)
+        msg = f"📥 Parte {qtd} guardada. Envie mais com !chata ou finalize com !chatsend."
     return jsonify({
         "status": "new", "is_command": True,
-        "resposta": _juntar(pendente, f"{resposta}\n\nID: {msg_id}"),
+        "resposta": _juntar(pendente, msg),
     }), 200
+
+
+def _handle_chatsend(cursor, msg_id, texto, pendente):
+    final = texto[len("!chatsend"):].strip()
+    partes = _db_module.consumir_buffer(cursor) + ([final] if final else [])
+    if not partes:
+        return jsonify({
+            "status": "new", "is_command": True,
+            "resposta": _juntar(pendente, "📭 Buffer vazio. Use !chata <texto> antes."),
+        }), 200
+    pergunta = "\n".join(partes)
+    # Grava o texto completo no histórico para a conversa enxergar a pergunta inteira
+    cursor.execute(
+        "UPDATE mensagens_usuario SET texto = ? WHERE id = ?",
+        (f"!chat {pergunta}", msg_id),
+    )
+    return _responder(cursor, msg_id, pergunta, pendente)
+
+
+def _handle_ia(cursor, msg_id, texto, pendente):
+    """Processa !chat / !fix; None se não for comando de IA."""
+    m = re.match(r"^!(chat|fix)", texto)
+    if not m:
+        return None
+    pergunta = texto[m.end():].strip()
+    return _responder(cursor, msg_id, pergunta, pendente, fix=m.group(1) == "fix")
 
 
 # ─────────────────────────────────────────────
@@ -331,7 +226,8 @@ def check_and_save():
             " ON CONFLICT (id) DO NOTHING",
             (msg_id, texto),
         )
-        if cursor.rowcount == 0:
+        # DuckDB não preenche rowcount (-1); a contagem de linhas inseridas vem no resultado
+        if cursor.fetchone()[0] == 0:
             return jsonify({"status": "duplicate"}), 200
 
         pendente = _pendente()
@@ -345,8 +241,12 @@ def check_and_save():
             return _handle_r(pendente, texto)
         if texto == "!kill":
             return _handle_kill(cursor)
-        if texto in ("!s", "!n"):
-            return _handle_confirmacao(cursor, msg_id, texto, pendente)
+        if texto == "!chclear":
+            return _handle_chclear(cursor, pendente)
+        if re.match(r"^!chata(\s|$)", texto):
+            return _handle_chata(cursor, msg_id, texto, pendente)
+        if re.match(r"^!chatsend(\s|$)", texto):
+            return _handle_chatsend(cursor, msg_id, texto, pendente)
 
         resp = _handle_ia(cursor, msg_id, texto, pendente)
         if resp is not None:
@@ -358,6 +258,10 @@ def check_and_save():
 
     except Exception as exc:  # pylint: disable=broad-exception-caught
         print(f"[Erro no Servidor]: {exc}")
-        return jsonify({"error": str(exc)}), 500
+        # 200 com resposta para o erro aparecer no chat (a extensão ignora não-"new")
+        return jsonify({
+            "status": "new", "is_command": True,
+            "resposta": f"❌ Erro no servidor: {exc}",
+        }), 200
     finally:
         cursor.close()
