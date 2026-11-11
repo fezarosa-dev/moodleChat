@@ -16,8 +16,9 @@ Mensagens que não começam com `!` são só registradas, sem resposta.
 ## Requisitos
 
 - Python 3.11+
-- GCC (para `!run` e para a IA testar o código antes de responder)
+- GCC (para `!run` e para a IA testar o código antes de responder) — no Windows, MinGW (WinLibs)
 - [Claude Code](https://docs.claude.com/claude-code) instalado e logado (`claude`) — usa a cota do seu plano
+- Windows: Git for Windows (o Claude Code usa o Git Bash)
 - Opcional: chave da API do Gemini, usada só se o Claude falhar
 - Firefox ou Chrome
 
@@ -29,21 +30,24 @@ Mensagens que não começam com `!` são só registradas, sem resposta.
 git clone https://github.com/fezarosa-dev/moodleChat.git
 cd moodleChat
 cp bot_moodle/.env.example bot_moodle/.env   # opcional: API_KEY do Gemini (reserva)
-./start.sh
+./start.sh          # Linux/macOS
+start.bat           # Windows (ou dois cliques no arquivo)
 ```
 
-O `start.sh` verifica o ambiente antes de subir o bot e, se faltar algo, diz o que instalar:
+O `start.sh` / `start.bat` verifica o ambiente antes de subir o bot e, se faltar algo, diz o que instalar:
 
 - Python 3.11+ e `gcc` (compila e roda um programa de teste);
 - Claude Code instalado **e logado** (manda uma pergunta mínima — gasta um pouco da cota);
 - `.venv` com as dependências — se não existir, é criada e instalada automaticamente;
+- no Windows, também o Git for Windows;
 - porta livre;
 - `.env` e `API_KEY` (só avisa: são opcionais).
 
 Se o `gcc`/`claude` estiverem numa distrobox (ex.: Fedora Silverblue), entre nela antes
 (`distrobox enter <box>`) e rode o `start.sh` lá dentro.
 
-Para desenvolver (pylint/pytest), instale também os extras: `bot_moodle/.venv/bin/pip install -e "bot_moodle[dev]"`.
+Para desenvolver (pylint/pytest), instale também os extras: `bot_moodle/.venv/bin/pip install -e "bot_moodle[dev]"`
+(no Windows: `bot_moodle\.venv\Scripts\pip install -e "bot_moodle[dev]"`).
 
 Variáveis do `.env` (todas opcionais):
 
@@ -93,7 +97,7 @@ moodleChat/
 ├── content.js          # Lê o chat do Moodle e escreve as respostas
 ├── chatUsage.js        # Extração das mensagens e chamada ao backend
 ├── background.js
-├── start.sh            # Sobe o backend
+├── start.sh / .bat     # Verifica o ambiente e sobe o backend (Linux / Windows)
 └── bot_moodle/
     ├── tests/          # Testes (pytest)
     └── bot_moodle/
