@@ -108,6 +108,10 @@ def _ajuda() -> str:
         "   !chatid<regras> <pergunta>\n"
         "   IDt -> pergunta E resposta  |  IDm -> só pergunta  |  IDr -> só resposta\n"
         "   Exemplo: !chatid8t,9m,10r qual a relação entre eles?\n\n"
+        "   MENSAGEM GRANDE (quebrada em partes):\n"
+        "   !chata <parte>          -> Guarda a parte sem chamar a IA.\n"
+        "   !chatsend [texto]       -> Junta as partes e envia como uma pergunta.\n"
+        "   (+<id> funciona em qualquer parte)\n\n"
         "4. EXECUÇÃO DE CÓDIGO C:\n"
         "   !run <código C>  -> Compila e executa.\n"
         "   !r <valor>       -> Envia input para o programa.\n"
@@ -169,6 +173,41 @@ def _handle_chclear(cursor, pendente):
     return jsonify({
         "status": "new", "is_command": True,
         "resposta": _juntar(pendente, msg),
+    }), 200
+
+
+def _handle_chata(cursor, msg_id, texto, pendente):
+    parte = texto[len("!chata"):].strip()
+    if not parte:
+        msg = "❌ Envie o texto após !chata. Exemplo: !chata primeira parte..."
+    else:
+        qtd = _db_module.adicionar_buffer(cursor, msg_id, parte)
+        msg = f"📥 Parte {qtd} guardada. Envie mais com !chata ou finalize com !chatsend."
+    return jsonify({
+        "status": "new", "is_command": True,
+        "resposta": _juntar(pendente, msg),
+    }), 200
+
+
+def _handle_chatsend(cursor, msg_id, texto, pendente):
+    final = texto[len("!chatsend"):].strip()
+    partes = _db_module.consumir_buffer(cursor) + ([final] if final else [])
+    if not partes:
+        return jsonify({
+            "status": "new", "is_command": True,
+            "resposta": _juntar(pendente, "📭 Buffer vazio. Use !chata <texto> antes."),
+        }), 200
+    pergunta, ctx_run = _resolver_run_id(cursor, "\n".join(partes))
+    # Grava o texto completo no histórico para !chatN / !chatid enxergarem a pergunta inteira
+    cursor.execute(
+        "UPDATE mensagens_usuario SET texto = ? WHERE id = ?",
+        (f"!chat {pergunta}", msg_id),
+    )
+    resposta = _gemini(pergunta, contexto=ctx_run + "\n" if ctx_run else "")
+    _db_module.salvar_resposta_ia(cursor, f"r_{msg_id}", msg_id, resposta)
+    return jsonify({
+        "status": "new", "is_command": True,
+        "resposta": _juntar(pendente, f"{resposta}\n\nID: {msg_id}"),
     }), 200
 
 
@@ -342,7 +381,8 @@ def check_and_save():
             " ON CONFLICT (id) DO NOTHING",
             (msg_id, texto),
         )
-        if cursor.rowcount == 0:
+        # DuckDB não preenche rowcount (-1); a contagem de linhas inseridas vem no resultado
+        if cursor.fetchone()[0] == 0:
             return jsonify({"status": "duplicate"}), 200
 
         pendente = _pendente()
@@ -360,6 +400,10 @@ def check_and_save():
             return _handle_chclear(cursor, pendente)
         if texto in ("!s", "!n"):
             return _handle_confirmacao(cursor, msg_id, texto, pendente)
+        if re.match(r"^!chata(\s|$)", texto):
+            return _handle_chata(cursor, msg_id, texto, pendente)
+        if re.match(r"^!chatsend(\s|$)", texto):
+            return _handle_chatsend(cursor, msg_id, texto, pendente)
 
         resp = _handle_ia(cursor, msg_id, texto, pendente)
         if resp is not None:
@@ -371,6 +415,10 @@ def check_and_save():
 
     except Exception as exc:  # pylint: disable=broad-exception-caught
         print(f"[Erro no Servidor]: {exc}")
-        return jsonify({"error": str(exc)}), 500
+        # 200 com resposta para o erro aparecer no chat (a extensão ignora não-"new")
+        return jsonify({
+            "status": "new", "is_command": True,
+            "resposta": f"❌ Erro no servidor: {exc}",
+        }), 200
     finally:
         cursor.close()

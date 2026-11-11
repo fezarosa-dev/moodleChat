@@ -10,6 +10,8 @@ from bot_moodle.db.database import (
     salvar_estado_pendente,
     deletar_estado_pendente,
     limpar_historico_chat,
+    adicionar_buffer,
+    consumir_buffer,
 )
 __all__ = [
 "conectar",
@@ -22,4 +24,6 @@ __all__ = [
 "salvar_estado_pendente",
 "deletar_estado_pendente",
 "limpar_historico_chat",
+"adicionar_buffer",
+"consumir_buffer",
 ]

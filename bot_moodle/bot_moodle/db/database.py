@@ -34,6 +34,12 @@ CREATE TABLE IF NOT EXISTS runs (
     saida     TEXT,
     data_run  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS buffer_chat (
+    msg_id      VARCHAR PRIMARY KEY,
+    texto       TEXT,
+    data_envio  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 
@@ -115,7 +121,7 @@ def buscar_mensagem(
         SELECT u.texto, r.texto_resposta, r.status
         FROM mensagens_usuario u
         LEFT JOIN respostas_ia r ON u.id = r.msg_usuario_id
-        WHERE u.id = ?
+        WHERE u.id = ? AND u.texto IS NOT NULL
         """,
         (msg_id,),
     ).fetchone()
@@ -173,7 +179,8 @@ def deletar_estado_pendente(cursor: duckdb.DuckDBPyConnection) -> None:
 
 def limpar_historico_chat(cursor: duckdb.DuckDBPyConnection) -> int:
     """
-    Remove todo o histórico de !chat/!fix (mensagens + respostas) do banco,
+    Remove todo o histórico de !chat/!fix (respostas + texto das mensagens;
+    os ids ficam para o dedup) e o buffer de !chata,
     além de qualquer estado pendente de confirmação. Retorna a quantidade
     de mensagens removidas.
     """
@@ -191,10 +198,39 @@ def limpar_historico_chat(cursor: duckdb.DuckDBPyConnection) -> int:
         )
         """
     )
+    # Mantém a linha (o id é o registro de dedup); só apaga o conteúdo.
+    # Deletar faria as mensagens antigas ainda visíveis no Moodle serem reprocessadas no reload.
     cursor.execute(
-        "DELETE FROM mensagens_usuario"
+        "UPDATE mensagens_usuario SET texto = NULL"
         " WHERE texto LIKE '!chat%' OR texto LIKE '!fix%'"
     )
     cursor.execute("DELETE FROM estado_pendente WHERE id_sessao = 1")
+    cursor.execute("DELETE FROM buffer_chat")
 
     return qtd
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  BUFFER DE MENSAGENS QUEBRADAS (!chata / !chatsend)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def adicionar_buffer(
+    cursor: duckdb.DuckDBPyConnection, msg_id: str, texto: str
+) -> int:
+    """Guarda uma parte no buffer; retorna o total de partes guardadas."""
+    cursor.execute(
+        "INSERT INTO buffer_chat (msg_id, texto) VALUES (?, ?)", (msg_id, texto)
+    )
+    return cursor.execute("SELECT COUNT(*) FROM buffer_chat").fetchone()[0]
+
+
+def consumir_buffer(cursor: duckdb.DuckDBPyConnection) -> list[str]:
+    """Retorna as partes em ordem de envio e esvazia o buffer."""
+    partes = [
+        r[0]
+        for r in cursor.execute(
+            "SELECT texto FROM buffer_chat ORDER BY data_envio, msg_id"
+        ).fetchall()
+    ]
+    cursor.execute("DELETE FROM buffer_chat")
+    return partes
