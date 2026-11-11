@@ -1,6 +1,7 @@
 """Integração com IA (Claude Code local, Gemini de reserva) — geração de respostas e sanitização."""
 
 import re
+import shutil
 import subprocess
 import tempfile
 from typing import Any
@@ -32,7 +33,7 @@ _INSTRUCAO_VERIFICAR = (
     "A resposta final é só o texto para o aluno, seguindo as regras de formatação da mensagem."
 )
 CLAUDE_CMD = [
-    "claude", "-p",
+    shutil.which("claude") or "claude", "-p",
     "--model", "opus",
     "--effort", "medium",
     "--tools", "Bash,Write,Read,Edit",
@@ -53,12 +54,15 @@ CLAUDE_TIMEOUT_S = 300
 def _pedir_ao_claude(prompt: str) -> "str | None":
     """Roda `claude -p` com o prompt no stdin. None em qualquer falha (cai no Gemini)."""
     try:
-        with tempfile.TemporaryDirectory(prefix="bot_moodle_") as pasta:
+        # ignore_cleanup_errors: no Windows o prog.exe pode ainda estar travado ao apagar
+        with tempfile.TemporaryDirectory(prefix="bot_moodle_", ignore_cleanup_errors=True) as pasta:
             proc = subprocess.run(
                 CLAUDE_CMD,
                 input=prompt,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",  # Windows usaria cp1252 e quebraria os acentos
+                errors="replace",
                 timeout=CLAUDE_TIMEOUT_S,
                 cwd=pasta,  # área de trabalho isolada por pedido, longe de CLAUDE.md
                 check=False,

@@ -1,8 +1,10 @@
 """Compilação e execução interativa de código C com timer de silêncio."""
 
+import os
 import queue
 import re
 import subprocess
+import tempfile
 import threading
 import time
 
@@ -13,8 +15,11 @@ from bot_moodle.core.headers import corrigir_includes
 # ─────────────────────────────────────────────────────────────────────────────
 
 SILENCE_TIMEOUT = 5.0  # segundos sem output → empacota resultado
-_ARQUIVO_C = "/tmp/temp_codigo.c"
-_BINARIO = "/tmp/temp_executavel"
+# Pasta temporária do sistema (/tmp no Linux, %TEMP% no Windows, onde o gcc gera .exe)
+_ARQUIVO_C = os.path.join(tempfile.gettempdir(), "temp_codigo.c")
+_BINARIO = os.path.join(
+    tempfile.gettempdir(), "temp_executavel" + (".exe" if os.name == "nt" else "")
+)
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  ESTADO GLOBAL DA SESSÃO
@@ -264,42 +269,44 @@ def compilar_e_executar(codigo_c: str, run_id: "str | None" = None) -> str:
 
     avisos_gcc = compile_result.stderr.strip()
 
-    with subprocess.Popen(
+    # Sem `with`: ele fecharia os pipes ao retornar e o programa receberia EOF antes do !r.
+    # O processo é encerrado por !kill / _monitor / próximo !run.
+    proc = subprocess.Popen(  # pylint: disable=consider-using-with
         [_BINARIO],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
         bufsize=0,
-    ) as proc:
-        _estado["proc"] = proc
-        _estado["stdout_queue"] = queue.Queue()
-        _estado["stderr_queue"] = queue.Queue()
-        _estado["saida_buffer"] = []
-        _estado["ultimo_print"] = 0.0
-        _estado["ativo"] = True
-        _estado["encerrou"] = False
-        _estado["run_id"] = run_id
-        _estado["run_codigo"] = codigo_limpo
-        _estado["run_inputs"] = []
-        _estado["run_saida"] = None
+    )
+    _estado["proc"] = proc
+    _estado["stdout_queue"] = queue.Queue()
+    _estado["stderr_queue"] = queue.Queue()
+    _estado["saida_buffer"] = []
+    _estado["ultimo_print"] = 0.0
+    _estado["ativo"] = True
+    _estado["encerrou"] = False
+    _estado["run_id"] = run_id
+    _estado["run_codigo"] = codigo_limpo
+    _estado["run_inputs"] = []
+    _estado["run_saida"] = None
 
-        _ler_saida_async(proc)
-        t = threading.Thread(target=_monitor, daemon=True)
-        _estado["monitor_thread"] = t
-        t.start()
+    _ler_saida_async(proc)
+    t = threading.Thread(target=_monitor, daemon=True)
+    _estado["monitor_thread"] = t
+    t.start()
 
-        prefixo = ""
-        if avisos_include:
-            prefixo += "\n".join(avisos_include) + "\n\n"
-        if avisos_gcc:
-            prefixo += f"⚠️ Avisos de Compilação:\n{avisos_gcc}\n\n"
+    prefixo = ""
+    if avisos_include:
+        prefixo += "\n".join(avisos_include) + "\n\n"
+    if avisos_gcc:
+        prefixo += f"⚠️ Avisos de Compilação:\n{avisos_gcc}\n\n"
 
-        return (
-            prefixo + "⏳ Programa em execução e aguardando entrada.\n"
-            "Use !r <valor> para enviar input. "
-            "A saída será entregue após 5s de silêncio ou quando você usar !kill."
-        )
+    return (
+        prefixo + "⏳ Programa em execução e aguardando entrada.\n"
+        "Use !r <valor> para enviar input. "
+        "A saída será entregue após 5s de silêncio ou quando você usar !kill."
+    )
 
 
 def enviar_input(valor: str) -> str:

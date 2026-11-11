@@ -1,21 +1,38 @@
 #!/usr/bin/env bash
-# Verifica se tudo que o bot precisa está instalado e funcionando; se estiver, sobe o backend.
-# Rode no ambiente onde estão gcc e claude (no Silverblue: dentro da distrobox).
+# Verifica se tudo que o bot precisa está instalado e funcionando; o que faltar, oferece instalar.
+# Se estiver tudo certo, sobe o backend. No Silverblue, rode dentro da distrobox.
 set -uo pipefail
-cd "$(dirname "$(readlink -f "$0")")/bot_moodle"
+SCRIPT=$(readlink -f "$0")
+cd "$(dirname "$SCRIPT")/bot_moodle"
+export PATH="$HOME/.local/bin:$PATH"  # onde o instalador do Claude Code coloca o binário
 
 erros=0
+instalou=0
 ok()    { echo "  ✅ $1"; }
 aviso() { echo "  ⚠️  $1"; }
-falta() { echo "  ❌ $1"; echo "     → $2"; erros=1; }
 
-# Comando de instalação conforme o gerenciador de pacotes do sistema
-instalar() {
-    if command -v rpm-ostree >/dev/null && ! command -v dnf >/dev/null; then
-        echo "sistema imutável: crie/entre numa distrobox e instale lá (dnf install $1)"
-    elif command -v dnf >/dev/null; then echo "sudo dnf install $1"
-    elif command -v apt >/dev/null; then echo "sudo apt install $2"
-    elif command -v pacman >/dev/null; then echo "sudo pacman -S $3"
+# falta <mensagem> <dica> [comando de instalação]
+# Com comando e terminal interativo, pergunta se quer instalar agora.
+falta() {
+    echo "  ❌ $1"; echo "     → $2"; erros=1
+    [ -n "${3:-}" ] && [ -t 0 ] || return 0
+    read -r -p "     Instalar agora? [S/n] " r
+    case "$r" in [nN]*) return 0 ;; esac
+    if bash -c "$3"; then instalou=1; else echo "     ❌ A instalação falhou."; fi
+}
+
+# Comando de instalação de pacote do sistema (vazio em sistema imutável/desconhecido)
+pacote() {  # pacote <dnf> <apt> <pacman>
+    if command -v rpm-ostree >/dev/null && ! command -v dnf >/dev/null; then return
+    elif command -v dnf >/dev/null; then echo "sudo dnf install -y $1"
+    elif command -v apt-get >/dev/null; then echo "sudo apt-get install -y $2"
+    elif command -v pacman >/dev/null; then echo "sudo pacman -S --noconfirm $3"
+    fi
+}
+dica_pacote() {  # o que mostrar quando não há como instalar automaticamente
+    local cmd; cmd=$(pacote "$@")
+    if [ -n "$cmd" ]; then echo "$cmd"
+    elif command -v rpm-ostree >/dev/null; then echo "sistema imutável: entre numa distrobox e rode o start.sh lá (dnf install $1)"
     else echo "instale $1 pelo gerenciador de pacotes do sistema"
     fi
 }
@@ -28,26 +45,30 @@ if command -v python3 >/dev/null && python3 -c 'import sys; sys.exit(sys.version
     ok "Python $(python3 -c 'import platform; print(platform.python_version())')"
     py_ok=1
 else
-    falta "Python 3.11+ não encontrado" "$(instalar python3 'python3 python3-venv' python)"
+    falta "Python 3.11+ não encontrado" "$(dica_pacote python3 'python3 python3-venv' python)" \
+          "$(pacote python3 'python3 python3-venv' python)"
     py_ok=0
 fi
 
 # gcc: compila e roda um programa de teste
 if ! command -v gcc >/dev/null; then
-    falta "gcc não encontrado (necessário para !run e para a IA testar código)" "$(instalar gcc gcc gcc)"
+    falta "gcc não encontrado (necessário para !run e para a IA testar código)" \
+          "$(dica_pacote gcc gcc gcc)" "$(pacote gcc gcc gcc)"
 else
     printf '#include <stdio.h>\nint main(void){puts("ok");return 0;}\n' > "$tmp/t.c"
     if gcc "$tmp/t.c" -o "$tmp/t" 2>"$tmp/gcc.log" && [ "$("$tmp/t")" = "ok" ]; then
         ok "gcc compila e executa"
     else
         falta "gcc não conseguiu compilar/rodar um programa de teste: $(head -1 "$tmp/gcc.log")" \
-              "$(instalar 'gcc glibc-devel' 'build-essential' 'base-devel')"
+              "$(dica_pacote 'gcc glibc-devel' build-essential base-devel)" \
+              "$(pacote 'gcc glibc-devel' build-essential base-devel)"
     fi
 fi
 
 # Claude Code: instalado e logado (pergunta mínima, usa um pouco da cota)
 if ! command -v claude >/dev/null; then
-    falta "Claude Code não encontrado" "curl -fsSL https://claude.ai/install.sh | bash   (depois rode: claude e faça login)"
+    falta "Claude Code não encontrado" "curl -fsSL https://claude.ai/install.sh | bash   (depois rode: claude e faça login)" \
+          "curl -fsSL https://claude.ai/install.sh | bash"
 else
     resp=$(cd "$tmp" && timeout 90 claude -p --model haiku --tools "" --setting-sources "" \
            --strict-mcp-config --no-session-persistence "Responda apenas: ok" 2>&1)
@@ -69,7 +90,7 @@ if [ "$py_ok" = 1 ]; then
         ok "Dependências Python"
     else
         falta "Falha ao instalar as dependências: $(tail -1 "$tmp/pip.log" 2>/dev/null)" \
-              "apague bot_moodle/.venv e rode de novo; no Debian/Ubuntu: $(instalar python3 python3-venv python)"
+              "apague bot_moodle/.venv e rode de novo; no Debian/Ubuntu: $(dica_pacote python3 python3-venv python)"
     fi
 fi
 
@@ -92,6 +113,11 @@ else
 fi
 [ "$porta" = 5000 ] || aviso "A extensão espera a porta 5000 (BACKEND_URL em chatUsage.js)"
 
+if [ "$instalou" = 1 ]; then
+    echo; echo "📦 Instalado. Verificando de novo..."; echo
+    rm -rf "$tmp"
+    exec "$SCRIPT" "$@"
+fi
 if [ "$erros" -ne 0 ]; then
     echo; echo "❌ Corrija os itens acima e rode o start.sh de novo."
     exit 1
