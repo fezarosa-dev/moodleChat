@@ -73,3 +73,5 @@ temp/
 # Arquivos de backup
 *~
 *.bak
+
+.serena/
