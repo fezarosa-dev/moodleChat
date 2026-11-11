@@ -25,6 +25,7 @@ ENV/
 
 # Banco de dados
 *.duckdb
+*.duckdb.wal
 *.sqlite
 *.sqlite3
 *.db

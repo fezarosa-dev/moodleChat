@@ -20,7 +20,7 @@ def sanitizar_resposta(texto: str) -> str:
 
 # Claude via CLI do Claude Code logado na máquina (usa a cota do plano, sem API key).
 # Roda como agente numa pasta temporária: escreve, compila e testa o código antes de responder.
-# Precisa do gcc no PATH — por isso o backend sobe dentro da distrobox fedora-dev (start.sh).
+# Precisa do gcc no PATH (no Silverblue, rode o backend dentro de uma distrobox com gcc).
 _INSTRUCAO_VERIFICAR = (
     "Se a sua resposta contiver código C, você DEVE testá-lo antes de responder:\n"
     "1. Salve o código em main.c nesta pasta (Write).\n"

@@ -27,22 +27,23 @@ Mensagens que não começam com `!` são só registradas, sem resposta.
 
 ```bash
 git clone https://github.com/fezarosa-dev/moodleChat.git
-cd moodleChat/bot_moodle
-
-python -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev]"
-
-cp .env.example .env   # API_KEY do Gemini é opcional
+cd moodleChat
+cp bot_moodle/.env.example bot_moodle/.env   # opcional: API_KEY do Gemini (reserva)
+./start.sh
 ```
 
-Para iniciar:
+O `start.sh` verifica o ambiente antes de subir o bot e, se faltar algo, diz o que instalar:
 
-```bash
-../start.sh      # sobe dentro da distrobox fedora-dev, onde estão gcc e claude
-# ou, num ambiente que já tem gcc e claude no PATH:
-bot-moodle
-```
+- Python 3.11+ e `gcc` (compila e roda um programa de teste);
+- Claude Code instalado **e logado** (manda uma pergunta mínima — gasta um pouco da cota);
+- `.venv` com as dependências — se não existir, é criada e instalada automaticamente;
+- porta livre;
+- `.env` e `API_KEY` (só avisa: são opcionais).
+
+Se o `gcc`/`claude` estiverem numa distrobox (ex.: Fedora Silverblue), entre nela antes
+(`distrobox enter <box>`) e rode o `start.sh` lá dentro.
+
+Para desenvolver (pylint/pytest), instale também os extras: `bot_moodle/.venv/bin/pip install -e "bot_moodle[dev]"`.
 
 Variáveis do `.env` (todas opcionais):
 
@@ -92,7 +93,7 @@ moodleChat/
 ├── content.js          # Lê o chat do Moodle e escreve as respostas
 ├── chatUsage.js        # Extração das mensagens e chamada ao backend
 ├── background.js
-├── start.sh            # Sobe o backend dentro da distrobox
+├── start.sh            # Sobe o backend
 └── bot_moodle/
     ├── tests/          # Testes (pytest)
     └── bot_moodle/
