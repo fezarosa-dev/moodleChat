@@ -1,6 +1,5 @@
-"""Integração com IA (Claude Code local, Gemini de reserva) — geração de respostas e sanitização."""
+"""Integração com IA (Claude Code local, Gemini de reserva) — geração de respostas."""
 
-import re
 import shutil
 import subprocess
 import tempfile
@@ -12,11 +11,6 @@ from google import genai
 def criar_cliente(api_key: str) -> "genai.Client | None":
     """Cria o cliente Gemini (reserva). None sem chave: bot usa só o Claude."""
     return genai.Client(api_key=api_key) if api_key else None
-
-
-def sanitizar_resposta(texto: str) -> str:
-    """Converte #include <x> → #include [x] para não quebrar HTML no navegador."""
-    return re.sub(r"#include\s*<([^>]+)>", r"#include [\1]", texto)
 
 
 # Claude via CLI do Claude Code logado na máquina (usa a cota do plano, sem API key).
@@ -93,7 +87,7 @@ def pedir_a_ia(
         modo_fix: se True, usa instrução de debugging em vez de tutoria.
 
     Returns:
-        Resposta da IA sanitizada, ou mensagem de cota esgotada.
+        Resposta da IA, ou mensagem de falha.
     """
     modelos_fallback = [
         "gemini-3.5-flash",
@@ -139,14 +133,14 @@ def pedir_a_ia(
     resposta = _pedir_ao_claude(prompt)
     if resposta:
         print("[IA] ✨ Sucesso com: Claude")
-        return sanitizar_resposta(resposta)
+        return resposta
 
     for modelo in modelos_fallback if cliente else []:
         try:
             print(f"[IA] Tentando modelo: {modelo}...")
             response = cliente.models.generate_content(model=modelo, contents=prompt)
             print(f"[IA] ✨ Sucesso com: {modelo}")
-            return sanitizar_resposta(response.text) + (
+            return response.text + (
                 "\n\n⚠️ Resposta do Gemini (reserva): código NÃO foi testado."
             )
         except Exception as exc:  # pylint: disable=broad-exception-caught
