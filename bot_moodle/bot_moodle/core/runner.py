@@ -192,7 +192,7 @@ def _limpar_estado() -> None:
     _estado["ativo"] = False
     _estado["encerrou"] = False
     # run_id/run_codigo/run_inputs/run_saida permanecem até o próximo
-    # compilar_e_executar, para permitir !chat+id após o encerramento.
+    # compilar_e_executar, para o run entrar no contexto do !chat após o encerramento.
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -211,7 +211,7 @@ def verificar_resultado_pendente() -> "str | None":
 def obter_dados_run() -> "dict | None":
     """
     Retorna os dados do run atual (id, codigo, inputs, saida) ou None.
-    Usado pelo server para persistir e montar contexto de !chat+id.
+    Usado pelo server para persistir o run (que entra no contexto do !chat).
     """
     if _estado["run_id"] is None:
         return None
@@ -221,6 +221,11 @@ def obter_dados_run() -> "dict | None":
         "inputs": list(_estado["run_inputs"]),
         "saida": _estado["run_saida"],
     }
+
+
+def esquecer_run() -> None:
+    """Descarta os dados do último run (o !chclear não deve deixá-lo voltar ao contexto)."""
+    _estado["run_id"] = None
 
 
 def compilar_e_executar(codigo_c: str, run_id: "str | None" = None) -> str:
