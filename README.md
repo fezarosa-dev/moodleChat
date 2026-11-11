@@ -8,7 +8,7 @@ Gemini como reserva) para tirar dúvidas e corrigir código.
 
 1. A extensão (`content.js` / `chatUsage.js`) lê o chat do Moodle a cada 2 s e envia cada mensagem
    nova para o backend em `http://localhost:5000/check_and_save`.
-2. O backend (Flask + DuckDB) identifica comandos (`!chat`, `!run`…), executa e devolve a resposta.
+2. O backend (Flask + DuckDB) identifica comandos (`!chat`, `!fix`…), executa e devolve a resposta.
 3. A extensão escreve a resposta no chat, quebrando em várias mensagens quando passa do limite do Moodle.
 
 Mensagens que não começam com `!` são só registradas, sem resposta.
@@ -18,7 +18,7 @@ Mensagens que não começam com `!` são só registradas, sem resposta.
 | | Linux | Windows |
 |---|---|---|
 | Python 3.11+ | pacote `python3` (+ `python3-venv` no Debian/Ubuntu) | `winget install Python.Python.3.13` |
-| GCC (para `!run` e para a IA testar o código) | pacote `gcc` | MinGW: `winget install BrechtSanders.WinLibs.POSIX.UCRT` |
+| GCC (para a IA compilar e testar o código) | pacote `gcc` | MinGW: `winget install BrechtSanders.WinLibs.POSIX.UCRT` |
 | [Claude Code](https://docs.claude.com/claude-code) instalado e logado | `curl -fsSL https://claude.ai/install.sh \| bash` | PowerShell: `irm https://claude.ai/install.ps1 \| iex` |
 | Git for Windows (o Claude Code usa o Git Bash) | — | `winget install Git.Git` |
 
@@ -95,20 +95,25 @@ Abra o chat do Moodle com o backend rodando e mande `!help`.
 | `!fix <código>` | Pede correção de bug para a IA |
 | `!chata <parte>` | Guarda uma parte de uma pergunta grande, sem chamar a IA |
 | `!chatsend [texto]` | Junta as partes guardadas e envia como uma pergunta |
-| `!run <código C>` | Compila e executa o código |
-| `!r <valor>` | Envia uma entrada para o programa em execução |
-| `!kill` | Encerra o programa e entrega toda a saída |
-| `!chclear` | Limpa a conversa (perguntas, respostas e runs) |
+| `!chclear` | Limpa a conversa |
 | `!help` | Mostra todos os comandos |
 
 **Conversa contínua:** `!chat` e `!fix` compartilham o mesmo histórico. A IA recebe automaticamente
-as últimas 20 interações (perguntas, respostas e `!run` com código, entradas e saída) desde o último
-`!chclear` — não é preciso indicar IDs nem repetir o código.
-
-**Execução:** a saída do `!run` chega depois de 5 s sem novo output, ou na hora com `!kill`.
+as últimas 20 interações desde o último `!chclear` — não é preciso indicar IDs nem repetir o código.
 
 **Código testado:** quando a resposta do Claude tem código C, ele compila e roda o código numa pasta
 temporária antes de responder. Respostas vindas do Gemini avisam que o código não foi testado.
+Para rodar o **seu** código, peça à IA: `!chat roda esse código com a entrada 5 ...`.
+
+**Código com `<` e `>`:** o Moodle trata as mensagens como HTML, então `#include <stdio.h>` ou
+`if (a<b && c>d)` sumiriam. A extensão escapa o texto (`&lt;`, `&gt;`, `&amp;`) ao enviar — tanto o que
+você digita quanto as respostas do bot — e o código aparece e chega ao bot exatamente como foi escrito.
+
+### Execução direta (`!run`) — desativada
+
+`!run <código C>`, `!r <valor>` e `!kill` compilavam e executavam o código direto, com entrada interativa.
+Estão desativados por enquanto (respondem avisando); o código continua no projeto. Para reativar, mude
+`RUN_ATIVO = True` em `bot_moodle/bot_moodle/routes/chat.py`.
 
 ## Estrutura do projeto
 
@@ -140,10 +145,10 @@ Instale os extras de desenvolvimento e rode, dentro de `bot_moodle/`:
 ```bash
 .venv/bin/pip install -e ".[dev]"      # Windows: .venv\Scripts\pip install -e ".[dev]"
 .venv/bin/pylint bot_moodle            # o CI exige nota >= 8
-.venv/bin/pytest                       # o teste do !run é pulado sem gcc
+.venv/bin/pytest                       # os testes do runner são pulados sem gcc
 ```
 
 ## Segurança
 
-`!run` (e os testes que a IA faz) executam código arbitrário na sua máquina, com o seu usuário.
+Os testes que a IA faz (e o `!run`, se reativado) executam código arbitrário na sua máquina, com o seu usuário.
 Use só em chats em que você confia.

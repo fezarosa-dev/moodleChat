@@ -12,6 +12,10 @@ bp = Blueprint("chat", __name__)
 # Quantos itens (pergunta+resposta ou run) da conversa vão como contexto para a IA
 LIMITE_CONTEXTO = 20
 
+# !run / !r / !kill desativados por enquanto (a IA já compila e testa o código).
+# O código continua aqui: troque para True para reativar.
+RUN_ATIVO = False
+
 # Injetados em bot_moodle/app.py após criar o app
 _db_conn   = None
 _ai_client = None
@@ -93,23 +97,27 @@ def _responder(cursor, msg_id, pergunta, pendente, fix=False):
 # ─────────────────────────────────────────────
 
 def _ajuda() -> str:
-    return (
-        "📋 GUIA DE COMANDOS DO BOT ACADÊMICO\n\n"
-        "1. IA (conversa contínua, como um chat normal):\n"
-        "   !chat <pergunta>   -> Pergunta para a IA.\n"
-        "   !fix <código>      -> Pede a correção de um bug.\n"
-        f"   A IA lembra das últimas {LIMITE_CONTEXTO} interações (perguntas e !run)\n"
-        "   até você usar !chclear. Código C da resposta é testado antes de chegar.\n\n"
-        "2. MENSAGEM GRANDE (maior que o limite do chat):\n"
-        "   !chata <parte>     -> Guarda uma parte sem chamar a IA.\n"
-        "   !chatsend [texto]  -> Junta as partes e envia como uma pergunta só.\n\n"
-        "3. EXECUÇÃO DE CÓDIGO C:\n"
+    execucao = (
+        "EXECUÇÃO DE CÓDIGO C:\n"
         "   !run <código C>    -> Compila e executa.\n"
         "   !r <valor>         -> Envia uma entrada para o programa.\n"
         "   !kill              -> Encerra e entrega toda a saída acumulada.\n"
         f"   A saída chega após {runner.SILENCE_TIMEOUT:g}s sem novo output ou com !kill.\n\n"
-        "4. OUTROS:\n"
-        "   !chclear           -> Limpa a conversa (perguntas, respostas e runs).\n"
+    ) if RUN_ATIVO else ""
+    return (
+        "📋 GUIA DE COMANDOS DO BOT ACADÊMICO\n\n"
+        "IA (conversa contínua, como um chat normal):\n"
+        "   !chat <pergunta>   -> Pergunta para a IA.\n"
+        "   !fix <código>      -> Pede a correção de um bug.\n"
+        f"   A IA lembra das últimas {LIMITE_CONTEXTO} interações até você usar !chclear.\n"
+        "   Código C da resposta é compilado e testado antes de chegar;\n"
+        "   para rodar o seu código, peça: !chat roda esse código com a entrada 5 ...\n\n"
+        "MENSAGEM GRANDE (maior que o limite do chat):\n"
+        "   !chata <parte>     -> Guarda uma parte sem chamar a IA.\n"
+        "   !chatsend [texto]  -> Junta as partes e envia como uma pergunta só.\n\n"
+        + execucao +
+        "OUTROS:\n"
+        "   !chclear           -> Limpa a conversa.\n"
         "   !help              -> Mostra este menu."
     )
 
@@ -230,6 +238,17 @@ def check_and_save():
         if cursor.fetchone()[0] == 0:
             return jsonify({"status": "duplicate"}), 200
 
+        # !kill antes de consumir o pendente: matar_processo entrega a saída de um
+        # programa que já terminou sozinho (senão ela seria descartada aqui)
+        if not RUN_ATIVO and re.match(r"^!(run|kill|r)(\s|$)", texto):
+            return jsonify({
+                "status": "new", "is_command": True,
+                "resposta": "⏸️ !run/!r/!kill estão desativados no momento. "
+                            "Para testar código, peça à IA: !chat roda esse código com a entrada ...",
+            }), 200
+        if texto == "!kill":
+            return _handle_kill(cursor)
+
         pendente = _pendente()
 
         if texto.startswith("!help"):
@@ -239,8 +258,6 @@ def check_and_save():
             return _handle_run(cursor, msg_id, texto, pendente)
         if texto.startswith("!r ") or texto == "!r":
             return _handle_r(pendente, texto)
-        if texto == "!kill":
-            return _handle_kill(cursor)
         if texto == "!chclear":
             return _handle_chclear(cursor, pendente)
         if re.match(r"^!chata(\s|$)", texto):

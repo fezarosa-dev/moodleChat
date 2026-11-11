@@ -44,3 +44,8 @@ def test_conversa_continua(monkeypatch, tmp_path):
     enviar("7", "!chat de novo")
     assert vistos[-1][1] == ""
     assert enviar("7", "!chat de novo") == {"status": "duplicate"}
+
+    # !run desativado: responde avisando, sem executar
+    assert "desativados" in enviar("8", "!run int main(){}")["resposta"]
+    assert "desativados" in enviar("9", "!r 5")["resposta"]
+    assert "!run" not in enviar("10", "!help")["resposta"]
