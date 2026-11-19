@@ -42,7 +42,7 @@ dica_pacote() {  # o que mostrar quando não há como instalar automaticamente
     fi
 }
 
-# Estrutura antiga (bot_moodle/bot_moodle, até a v0.1): leva o .env, o banco e as sessões do
+# Estrutura antiga (bot_moodle/bot_moodle, até a v1.x): leva o .env, o banco e as sessões do
 # Instagram para o lugar novo (.env na raiz, o resto em dados/). Nunca sobrescreve nada.
 migrar_estrutura_antiga() {
     if [ -f bot_moodle/.env ] && [ ! -f .env ]; then

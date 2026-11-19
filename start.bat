@@ -13,7 +13,7 @@ set "TMPD=%TEMP%\bot_moodle_check"
 if not exist "%TMPD%" mkdir "%TMPD%"
 
 echo Verificando o ambiente...
-rem Estrutura antiga (bot_moodle\bot_moodle, até a v0.1): leva o .env, o banco e as sessões do
+rem Estrutura antiga (bot_moodle\bot_moodle, até a v1.x): leva o .env, o banco e as sessões do
 rem Instagram para o lugar novo (.env na raiz, o resto em dados\). Nunca sobrescreve nada.
 if exist "bot_moodle\.env" if not exist ".env" move "bot_moodle\.env" ".env" >nul && echo   .env movido para a raiz do projeto
 for %%F in (bot_moodle\ig_session*.json bot_moodle\moodle_history.duckdb*) do (
