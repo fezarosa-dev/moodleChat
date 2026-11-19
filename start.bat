@@ -3,7 +3,7 @@ chcp 65001 >nul
 setlocal EnableDelayedExpansion
 rem Verifica se tudo que o bot precisa está instalado e funcionando; se estiver, sobe o backend.
 set PYTHONUTF8=1
-cd /d "%~dp0bot_moodle"
+cd /d "%~dp0"
 set ERROS=0
 rem --config abre o menu de preferências direto
 set "CONFIG="
@@ -13,6 +13,15 @@ set "TMPD=%TEMP%\bot_moodle_check"
 if not exist "%TMPD%" mkdir "%TMPD%"
 
 echo Verificando o ambiente...
+rem Estrutura antiga (bot_moodle\bot_moodle, até a v1.x): leva o .env, o banco e as sessões do
+rem Instagram para o lugar novo (.env na raiz, o resto em dados\). Nunca sobrescreve nada.
+if exist "bot_moodle\.env" if not exist ".env" move "bot_moodle\.env" ".env" >nul && echo   .env movido para a raiz do projeto
+for %%F in (bot_moodle\ig_session*.json bot_moodle\moodle_history.duckdb*) do (
+    if not exist dados mkdir dados
+    if not exist "dados\%%~nxF" move "%%~F" dados\ >nul && echo   %%~nxF movido para dados\
+)
+if exist "bot_moodle\.venv" rd /s /q "bot_moodle\.venv"
+if exist "bot_moodle\bot_moodle.egg-info" rd /s /q "bot_moodle\bot_moodle.egg-info"
 
 rem ── Python 3.11+ ──────────────────────────────────────────────
 set "PY="
@@ -39,19 +48,19 @@ echo   Preparando .venv e instalando dependências...
 if not exist ".venv\Scripts\python.exe" %PY% -m venv .venv
 ".venv\Scripts\python.exe" -m pip install -q -e . >"%TMPD%\pip.log" 2>&1
 if exist ".venv\Scripts\bot-moodle.exe" ".venv\Scripts\python.exe" -c "%DEPS%" >nul 2>nul && goto :deps_ok
-call :falta "falha ao instalar as dependências" "veja %TMPD%\pip.log; apague bot_moodle\.venv e rode de novo"
+call :falta "falha ao instalar as dependências" "veja %TMPD%\pip.log; apague a pasta .venv e rode de novo"
 goto :fim
 :deps_ok
 echo   [OK] Dependências Python
 
 rem ── Menu de preferências (IAs, modelos, plataformas, vigia): Enter mantém as salvas
 echo.
-".venv\Scripts\python.exe" -m bot_moodle.preferencias %CONFIG%
+".venv\Scripts\python.exe" -m bot_moodle.inicio.preferencias %CONFIG%
 echo.
 
 rem ── Testa cada IA da linha (uma mensagem por IA), o Instagram e a porta ──
 echo Testando as IAs da linha, o Instagram e a porta (pode levar um minuto)...
-".venv\Scripts\python.exe" -m bot_moodle.checagens >"%TMPD%\checagens.log" 2>&1
+".venv\Scripts\python.exe" -m bot_moodle.inicio.checagens >"%TMPD%\checagens.log" 2>&1
 rem sem expansão atrasada no laço: com ela, um "!" das mensagens (ex.: !run) some
 setlocal DisableDelayedExpansion
 for /f "usebackq tokens=1*" %%A in ("%TMPD%\checagens.log") do (
