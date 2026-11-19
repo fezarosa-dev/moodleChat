@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=70", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bot-moodle"
+version = "0.1.0"
+description = "Bot acadêmico de programação integrado ao Moodle (C runner + IA)"
+readme = "README.md"
+requires-python = ">=3.11"
+
+dependencies = [
+    "flask>=3.0",
+    "flask-cors>=4.0",
+    "duckdb>=0.10",
+    "google-genai>=0.8",
+    "python-dotenv>=1.0",
+    "instagrapi==3.2.18",
+    "anthropic>=2.0",
+    "certifi",  # certificados SSL do Moodle pela API (macOS com Python do python.org)
+]
+
+[project.scripts]
+bot-moodle = "bot_moodle.app:main"
+
+[project.optional-dependencies]
+dev = [
+    "pylint>=3.0",
+    "pytest>=8.0",
+]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["bot_moodle*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+# ─── Pylint ──────────────────────────────────────────────────────────────────
+
+[tool.pylint.main]
+recursive = true
+ignore = [".venv", "dados"]
+
+[tool.pylint.format]
+max-line-length = 120

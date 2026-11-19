@@ -37,6 +37,8 @@ ENV/
 ig_session*.json
 .instagram_vivo
 .moodle_vivo
+# tudo que o bot cria sozinho: banco, sessões do Instagram, arquivos do vigia
+dados/
 
 # Coverage / testes
 .pytest_cache/
