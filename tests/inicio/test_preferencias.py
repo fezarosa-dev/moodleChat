@@ -126,9 +126,9 @@ def test_enter_mantem_a_opcao_atual(digitar):
 
 def test_salvar_troca_as_linhas_existentes_e_acrescenta_as_novas(tmp_path):
     env = tmp_path / ".env"
-    env.write_text("# comentário\nAPI_KEY=x\nBOT_IAS=gemini\n")
+    env.write_text("# comentário\nAPI_KEY=x\nBOT_IAS=gemini\n", encoding="utf-8")
     preferencias.salvar({"BOT_IAS": "claude_api,gemini", "BOT_VIGIA": "0"}, env)
-    assert env.read_text() == "# comentário\nAPI_KEY=x\nBOT_IAS=claude_api,gemini\nBOT_VIGIA=0\n"
+    assert env.read_text(encoding="utf-8") == "# comentário\nAPI_KEY=x\nBOT_IAS=claude_api,gemini\nBOT_VIGIA=0\n"
 
 
 @pytest.mark.parametrize("senha", ["abc #1", "com espaço", "aspa'simples", "tudo ' e \" junto"])

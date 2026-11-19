@@ -21,8 +21,9 @@ SILENCE_TIMEOUT = 5.0  # segundos sem output -> entrega o que juntou
 # pasta temporária do sistema (/tmp no Linux, %TEMP% no Windows, onde o gcc gera .exe)
 _ARQUIVO_C = os.path.join(tempfile.gettempdir(), "temp_codigo.c")
 _BINARIO = os.path.join(tempfile.gettempdir(), "temp_executavel" + (".exe" if os.name == "nt" else ""))
-# força line-buffering: em pipe o C guarda a saída em blocos e ela só apareceria no fim
-_SETVBUF = r"\1\n    setvbuf(stdout, NULL, _IOLBF, 0);"
+# stdout sem buffer: em pipe o C guarda a saída em blocos e ela só apareceria no fim (ou se
+# perderia no !kill). _IONBF e não _IOLBF: no Windows o _IOLBF vira buffer cheio
+_SETVBUF = r"\1\n    setvbuf(stdout, NULL, _IONBF, 0);"
 _INICIO_DO_MAIN = r"(int\s+main\s*\([^)]*\)\s*\{)"
 
 NENHUM_PROGRAMA = "⚠️ Nenhum programa estava em execução no momento."
@@ -50,7 +51,7 @@ class Execucao:  # pylint: disable=too-many-instance-attributes
         # sem `with`: ele fecharia os pipes ao retornar e o programa receberia EOF antes do !r
         self.processo = subprocess.Popen(  # pylint: disable=consider-using-with
             [_BINARIO], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            text=True, bufsize=0)
+            text=True, encoding="utf-8", errors="replace", bufsize=0)  # cp1252 no Windows quebraria acentos
         for stream, fila in ((self.processo.stdout, self._stdout), (self.processo.stderr, self._stderr)):
             threading.Thread(target=_ler_stream, args=(stream, fila), daemon=True).start()
         threading.Thread(target=self._monitorar, daemon=True).start()
@@ -183,7 +184,7 @@ def _compilar(codigo: str) -> subprocess.CompletedProcess:
     with open(_ARQUIVO_C, "w", encoding="utf-8") as arquivo:
         arquivo.write(codigo)
     return subprocess.run(["gcc", _ARQUIVO_C, "-o", _BINARIO, "-Wall", "-lm"],
-                          capture_output=True, text=True, check=False)
+                          capture_output=True, text=True, encoding="utf-8", errors="replace", check=False)
 
 
 def _avisos(avisos_include: list[str], avisos_gcc: str = "") -> str:
