@@ -4,7 +4,7 @@
 # Compatível com o bash 3.2 do macOS: array vazio vira ${a[@]+"${a[@]}"} por causa do set -u.
 set -uo pipefail
 SCRIPT=$(readlink -f "$0" 2>/dev/null || echo "$0")  # macOS antigo não tem -f
-cd "$(dirname "$SCRIPT")/bot_moodle"
+cd "$(dirname "$SCRIPT")"
 export PATH="$HOME/.local/bin:$PATH"  # onde o instalador do Claude Code coloca o binário
 
 erros=0
@@ -42,6 +42,20 @@ dica_pacote() {  # o que mostrar quando não há como instalar automaticamente
     fi
 }
 
+# Estrutura antiga (bot_moodle/bot_moodle, até a v0.1): leva o .env, o banco e as sessões do
+# Instagram para o lugar novo (.env na raiz, o resto em dados/). Nunca sobrescreve nada.
+migrar_estrutura_antiga() {
+    if [ -f bot_moodle/.env ] && [ ! -f .env ]; then
+        mv bot_moodle/.env .env && echo "  📁 .env movido para a raiz do projeto"
+    fi
+    for arquivo in bot_moodle/ig_session*.json bot_moodle/moodle_history.duckdb*; do
+        [ -e "$arquivo" ] || continue
+        mkdir -p dados
+        mv -n "$arquivo" dados/ && echo "  📁 $(basename "$arquivo") movido para dados/"
+    done
+    rm -rf bot_moodle/.venv bot_moodle/bot_moodle.egg-info  # recriados na raiz
+}
+
 # --config abre o menu de preferências direto; o resto vai para o bot
 config=(); args=()
 for a in "$@"; do
@@ -49,6 +63,7 @@ for a in "$@"; do
 done
 
 echo "🔎 Verificando o ambiente..."
+migrar_estrutura_antiga
 tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
 
 # Python
@@ -89,14 +104,14 @@ if [ "$py_ok" = 1 ]; then
         ok "Dependências Python"; deps_ok=1
     else
         falta "Falha ao instalar as dependências: $(tail -1 "$tmp/pip.log" 2>/dev/null)" \
-              "apague bot_moodle/.venv e rode de novo; no Debian/Ubuntu: $(dica_pacote python3 python3-venv python 'brew install python@3.13')"
+              "apague a pasta .venv e rode de novo; no Debian/Ubuntu: $(dica_pacote python3 python3-venv python 'brew install python@3.13')"
     fi
 fi
 
 # Menu de preferências (IAs, modelos, plataformas, vigia): Enter mantém as salvas
 if [ "$deps_ok" = 1 ]; then
     echo
-    .venv/bin/python -m bot_moodle.preferencias ${config[@]+"${config[@]}"}
+    .venv/bin/python -m bot_moodle.inicio.preferencias ${config[@]+"${config[@]}"}
     echo
     # Testa cada IA da linha (uma mensagem por IA), o Instagram e a porta, conforme as escolhas
     while read -r st msg; do
@@ -109,7 +124,7 @@ if [ "$deps_ok" = 1 ]; then
             *Error:) echo "  ❌ as checagens quebraram: $st $msg"; erros=1 ;;  # fim de um traceback
             *)     ;;  # o resto do traceback e avisos de bibliotecas
         esac
-    done < <(.venv/bin/python -m bot_moodle.checagens 2>&1)
+    done < <(.venv/bin/python -m bot_moodle.inicio.checagens 2>&1)
 fi
 
 if [ "$instalou" = 1 ]; then
