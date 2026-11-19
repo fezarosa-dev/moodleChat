@@ -6,52 +6,11 @@ console.log("[Bot] Camada de interface (content.js) iniciada! 🚀");
 // O chat do Moodle corta em 4096 caracteres (medido); folga para \n / acentos contados diferente no servidor.
 const LIMITE_PADRAO = 3000;
 const TIMEOUT_ENVIO_MS = 15000; // teto de espera por parte enviada
-const RESERVA_PREFIXO = 10; // espaço para "(12/34) "
 
 const dormir = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const SELETOR_CAMPO = 'textarea[data-region="send-message-txt"]';
 const SELETOR_BOTAO = 'button[data-action="send-message"]';
-
-/**
- * O Moodle interpreta a mensagem como HTML: "<stdio.h>" ou "a<b && c>d" viram tag e somem.
- * Escapando antes de enviar, ele guarda as entidades e mostra o texto exato
- * (e o innerText que o bot lê volta com os "<" originais).
- */
-function escaparHtml(texto) {
-    return texto.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-
-function desescaparHtml(texto) {
-    return texto.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
-}
-
-/**
- * Quebra o texto (já escapado) em partes <= limite, preferindo cortar em quebra de linha,
- * depois em espaço, e só em último caso no meio da palavra.
- * Com mais de uma parte, prefixa "(i/n) " — isso também impede que uma parte
- * comece com "!" e seja reprocessada como comando.
- */
-function dividirMensagem(texto, limite) {
-    const max = limite - RESERVA_PREFIXO;
-    const partes = [];
-    let resto = texto;
-    while (resto.length > max) {
-        let corte = resto.lastIndexOf("\n", max);
-        if (corte < max / 2) corte = resto.lastIndexOf(" ", max);
-        if (corte < max / 2) {
-            corte = max;
-            // Não corta uma entidade (&amp; tem até 5 chars) no meio
-            const amp = resto.lastIndexOf("&", corte - 1);
-            if (amp > corte - 6 && resto.indexOf(";", amp) >= corte) corte = amp;
-        }
-        partes.push(resto.slice(0, corte));
-        resto = resto.slice(corte).replace(/^[\n ]/, "");
-    }
-    partes.push(resto);
-    if (partes.length === 1) return partes;
-    return partes.map((p, i) => `(${i + 1}/${partes.length}) ${p}`);
-}
 
 function limiteDoCampo(campo) {
     return campo.maxLength > 0 ? campo.maxLength : LIMITE_PADRAO;
