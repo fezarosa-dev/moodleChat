@@ -33,6 +33,11 @@ ENV/
 # Logs
 *.log
 
+# Sessão do Instagram (vale tanto quanto a senha)
+ig_session*.json
+.instagram_vivo
+.moodle_vivo
+
 # Coverage / testes
 .pytest_cache/
 .coverage

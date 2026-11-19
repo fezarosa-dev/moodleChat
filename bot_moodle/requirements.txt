@@ -1,5 +1,8 @@
 flask
 flask-cors
 duckdb
-google-generativeai
+google-genai>=0.8
 python-dotenv
+instagrapi==3.2.18
+anthropic>=2.0
+certifi

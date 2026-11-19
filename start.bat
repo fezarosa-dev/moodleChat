@@ -5,6 +5,9 @@ rem Verifica se tudo que o bot precisa está instalado e funcionando; se estiver
 set PYTHONUTF8=1
 cd /d "%~dp0bot_moodle"
 set ERROS=0
+rem --config abre o menu de preferências direto
+set "CONFIG="
+if /i "%~1"=="--config" set "CONFIG=--config"
 set INSTALOU=0
 set "TMPD=%TEMP%\bot_moodle_check"
 if not exist "%TMPD%" mkdir "%TMPD%"
@@ -19,60 +22,53 @@ if defined PY %PY% -c "import sys; sys.exit(sys.version_info < (3, 11))" >nul 2>
 if defined PY (echo   [OK] Python) else (call :falta "Python 3.11+ não encontrado" "winget install Python.Python.3.13" python)
 
 rem ── gcc: compila e roda um programa de teste ─────────────────
-where gcc >nul 2>nul || (call :falta "gcc não encontrado, necessário para executar código C" "winget install BrechtSanders.WinLibs.POSIX.UCRT" gcc & goto :claude)
+where gcc >nul 2>nul || (call :falta "gcc não encontrado, necessário para executar código C" "winget install BrechtSanders.WinLibs.POSIX.UCRT" gcc & goto :deps)
 >"%TMPD%\t.c" echo #include ^<stdio.h^>
 >>"%TMPD%\t.c" echo int main(void){puts("ok");return 0;}
-gcc "%TMPD%\t.c" -o "%TMPD%\t.exe" 2>"%TMPD%\gcc.log" || (call :falta "gcc não compilou um programa de teste" "veja o erro em %TMPD%\gcc.log ou reinstale o gcc" & goto :claude)
+gcc "%TMPD%\t.c" -o "%TMPD%\t.exe" 2>"%TMPD%\gcc.log" || (call :falta "gcc não compilou um programa de teste" "veja o erro em %TMPD%\gcc.log ou reinstale o gcc" & goto :deps)
 set "SAIDA="
 for /f "delims=" %%L in ('"%TMPD%\t.exe"') do set "SAIDA=%%L"
 if "!SAIDA!"=="ok" (echo   [OK] gcc compila e executa) else (call :falta "o programa de teste compilou mas não rodou" "reinstale o gcc")
 
-rem ── Claude Code: instalado e logado ──────────────────────────
-:claude
-where claude >nul 2>nul || (call :falta "Claude Code não encontrado" "no PowerShell: irm https://claude.ai/install.ps1 | iex   depois rode claude e faça login" claude & goto :deps)
-where git >nul 2>nul || (call :falta "Git for Windows não encontrado, o Claude Code precisa do Git Bash" "winget install Git.Git" git & goto :deps)
-pushd "%TMPD%"
-call claude -p --model haiku --tools "" --setting-sources "" --strict-mcp-config --no-session-persistence "Responda apenas: ok" >"%TMPD%\claude.log" 2>&1
-set "CLAUDE_ERRO=!errorlevel!"
-popd
-set "RESP="
-set /p RESP=<"%TMPD%\claude.log"
-if "!CLAUDE_ERRO!"=="0" if defined RESP (echo   [OK] Claude Code responde& goto :deps)
-call :falta "Claude Code não respondeu: !RESP!" "rode claude e faça login"
-
 rem ── .venv e dependências Python: cria/instala sozinho ────────
 :deps
-if not defined PY goto :env
-set "DEPS=import flask, flask_cors, duckdb, dotenv; from google import genai"
+if not defined PY goto :fim
+set "DEPS=import flask, flask_cors, duckdb, dotenv, instagrapi, anthropic, certifi; from google import genai"
 if exist ".venv\Scripts\bot-moodle.exe" ".venv\Scripts\python.exe" -c "%DEPS%" >nul 2>nul && goto :deps_ok
 echo   Preparando .venv e instalando dependências...
 if not exist ".venv\Scripts\python.exe" %PY% -m venv .venv
 ".venv\Scripts\python.exe" -m pip install -q -e . >"%TMPD%\pip.log" 2>&1
 if exist ".venv\Scripts\bot-moodle.exe" ".venv\Scripts\python.exe" -c "%DEPS%" >nul 2>nul && goto :deps_ok
 call :falta "falha ao instalar as dependências" "veja %TMPD%\pip.log; apague bot_moodle\.venv e rode de novo"
-goto :env
+goto :fim
 :deps_ok
 echo   [OK] Dependências Python
 
-rem ── .env: opcional ───────────────────────────────────────────
-:env
-if not exist ".env" (echo   [AVISO] .env não encontrado: usando padrões, sem Gemini de reserva& goto :porta)
-findstr /r "^API_KEY=." .env >nul || goto :sem_key
-findstr /c:"API_KEY=sua_chave_aqui" .env >nul && goto :sem_key
-echo   [OK] .env com Gemini de reserva
-goto :porta
-:sem_key
-echo   [AVISO] API_KEY não configurada no .env: sem Gemini de reserva, é opcional
+rem ── Menu de preferências (IAs, modelos, plataformas, vigia): Enter mantém as salvas
+echo.
+".venv\Scripts\python.exe" -m bot_moodle.preferencias %CONFIG%
+echo.
 
-rem ── Porta livre ──────────────────────────────────────────────
-:porta
-set "PORTA=%PORT%"
-if not defined PORTA if exist ".env" for /f "tokens=2 delims==" %%P in ('findstr /r "^PORT=" .env') do set "PORTA=%%P"
-if not defined PORTA set "PORTA=5000"
-if not defined PY goto :fim
-%PY% -c "import socket; socket.create_server(('127.0.0.1', !PORTA!)).close()" >nul 2>nul
-if errorlevel 1 (call :falta "Porta !PORTA! já está em uso, o bot já está rodando?" "feche o outro processo ou mude PORT no .env") else (echo   [OK] Porta !PORTA! livre)
-if not "!PORTA!"=="5000" echo   [AVISO] A extensão espera a porta 5000, veja BACKEND_URL em chatUsage.js
+rem ── Testa cada IA da linha (uma mensagem por IA), o Instagram e a porta ──
+echo Testando as IAs da linha, o Instagram e a porta (pode levar um minuto)...
+".venv\Scripts\python.exe" -m bot_moodle.checagens >"%TMPD%\checagens.log" 2>&1
+rem sem expansão atrasada no laço: com ela, um "!" das mensagens (ex.: !run) some
+setlocal DisableDelayedExpansion
+for /f "usebackq tokens=1*" %%A in ("%TMPD%\checagens.log") do (
+    if "%%A"=="OK" echo   [OK] %%B
+    if "%%A"=="AVISO" echo   [AVISO] %%B
+    if "%%A"=="PULA" echo   [--] %%B
+    if "%%A"=="DICA" echo          -^> %%B
+    if "%%A"=="ERRO" echo   [ERRO] %%B
+)
+endlocal
+findstr /b /c:"ERRO " "%TMPD%\checagens.log" >nul && set ERROS=1
+rem traceback de um erro inesperado nas checagens
+findstr /r /c:"^[A-Za-z.]*Error:" "%TMPD%\checagens.log" >nul && (
+    echo   [ERRO] as checagens quebraram:
+    findstr /r /c:"^[A-Za-z.]*Error:" "%TMPD%\checagens.log"
+    set ERROS=1
+)
 
 :fim
 rd /s /q "%TMPD%" 2>nul
@@ -101,7 +97,7 @@ echo          -^> !M2!
 set ERROS=1
 rem 3º argumento: o que instalar; pergunta antes
 if "%~3"=="" exit /b 0
-if not "%~3"=="claude" (where winget >nul 2>nul || exit /b 0)
+where winget >nul 2>nul || exit /b 0
 set "R="
 set /p "R=         Instalar agora? [S/n] "
 if /i "!R!"=="n" exit /b 0
@@ -115,12 +111,4 @@ exit /b
 
 :instalar_gcc
 winget install -e --id BrechtSanders.WinLibs.POSIX.UCRT --accept-source-agreements --accept-package-agreements
-exit /b
-
-:instalar_git
-winget install -e --id Git.Git --accept-source-agreements --accept-package-agreements
-exit /b
-
-:instalar_claude
-powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://claude.ai/install.ps1 | iex"
 exit /b

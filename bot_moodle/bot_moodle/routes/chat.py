@@ -1,6 +1,7 @@
 """Handlers das rotas do bot — um handler por comando."""
 
 import re
+import threading
 from flask import Blueprint, request, jsonify
 
 from bot_moodle.core import runner
@@ -15,6 +16,11 @@ LIMITE_CONTEXTO = 20
 # !run / !r / !kill desativados por enquanto (a IA já compila e testa o código).
 # O código continua aqui: troque para True para reativar.
 RUN_ATIVO = False
+
+# Fila: Moodle e Instagram chegam em threads diferentes; processa uma mensagem por vez
+# para o histórico compartilhado não intercalar. ponytail: Lock não garante ordem FIFO
+# estrita, mas com poucas mensagens a ordem de chegada se mantém na prática.
+_fila = threading.Lock()
 
 # Injetados em bot_moodle/app.py após criar o app
 _db_conn   = None
@@ -222,7 +228,12 @@ def _handle_ia(cursor, msg_id, texto, pendente):
 
 @bp.route("/check_and_save", methods=["POST"])
 def check_and_save():
-    """Recebe mensagem do Moodle, processa e retorna resposta."""
+    """Recebe mensagem (Moodle ou Instagram), processa na fila e retorna resposta."""
+    with _fila:
+        return _processar()
+
+
+def _processar():
     data   = request.json
     msg_id = data.get("id")
     texto  = data.get("texto", "").strip()
