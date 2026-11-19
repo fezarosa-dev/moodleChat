@@ -16,7 +16,7 @@ pytestmark = pytest.mark.skipif(not shutil.which("gcc"), reason="precisa de gcc"
 DOBRO = '#include <stdio.h>\nint main(){int x; scanf("%d",&x); printf("dobro=%d\\n", x*2);}'
 
 
-def esperar_saida(segundos=8.0):
+def esperar_saida(segundos=15.0):
     """A saída chega depois de SILENCE_TIMEOUT sem novidade, ou quando o programa termina."""
     limite = time.monotonic() + segundos
     while time.monotonic() < limite:
@@ -25,6 +25,14 @@ def esperar_saida(segundos=8.0):
             return saida
         time.sleep(0.1)
     return None
+
+
+def esperar(condicao, segundos=10.0):
+    """Espera a condição ficar verdadeira (sem tempo fixo: o macOS do CI demora a abrir um
+    binário recém-compilado)."""
+    limite = time.monotonic() + segundos
+    while not condicao() and time.monotonic() < limite:
+        time.sleep(0.05)
 
 
 def test_programa_recebe_entrada_depois_do_run():
@@ -70,7 +78,7 @@ def test_kill_sem_programa_rodando():
 
 def test_kill_entrega_a_saida_de_programa_em_loop():
     runner.compilar_e_executar('#include <stdio.h>\nint main(){ puts("começou"); for(;;); }')
-    time.sleep(0.5)
+    esperar(lambda: runner._atual.ultimo_print > 0)  # o programa já escreveu algo
     resposta = runner.matar_processo()
     assert "encerrado pelo !kill" in resposta and "começou" in resposta
 
@@ -79,7 +87,7 @@ def test_kill_entrega_saida_de_programa_ja_encerrado(enviar, monkeypatch):
     monkeypatch.setattr(comandos, "RUN_ATIVO", True)
     enviar(f"!run {DOBRO}")
     enviar("!r 21")
-    time.sleep(1)  # o programa termina sozinho e a saída fica pendente
+    esperar(lambda: runner._atual.encerrou)  # o programa termina sozinho e a saída fica pendente
     assert "dobro=42" in enviar("!kill")["resposta"]
 
 
