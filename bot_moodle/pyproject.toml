@@ -15,6 +15,9 @@ dependencies = [
     "duckdb>=0.10",
     "google-genai>=0.8",
     "python-dotenv>=1.0",
+    "instagrapi==3.2.18",
+    "anthropic>=2.0",
+    "certifi",  # certificados SSL do Moodle pela API (macOS com Python do python.org)
 ]
 
 [project.scripts]
